@@ -113,6 +113,18 @@ export function formatSpec(spec: PortSpec): string {
   }
 }
 
+/** 可再被 parseSpec 解析回相同規格的文字（編輯既有規格時使用） */
+export function specToText(spec: PortSpec): string {
+  switch (spec.kind) {
+    case 'thread':
+      return `${threadDesignation(spec)} ${GENDER_LABEL[spec.gender]}`
+    case 'tube':
+      return `${tubeLabel(spec)} ${spec.role === 'socket' ? '快插' : '插管'}`
+    case 'interface':
+      return spec.key
+  }
+}
+
 /** 精簡顯示，用於 3D 標籤，例如「Rc1/8」「Ø6」「SY3000」 */
 export function formatSpecShort(spec: PortSpec): string {
   switch (spec.kind) {

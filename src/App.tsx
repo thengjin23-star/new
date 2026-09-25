@@ -1,26 +1,18 @@
-import { ReactFlowProvider } from '@xyflow/react'
-import { CircuitCanvas } from './components/CircuitCanvas'
-import { Palette } from './components/Palette'
-import { Toolbar } from './components/Toolbar'
-import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { useSimulationLoop } from './hooks/useSimulationLoop'
+import { lazy, Suspense } from 'react'
+import { CircuitWorkspace } from './components/CircuitWorkspace'
+import { useWorkspace } from './components/workspace'
+
+// 3D 模組組立較大（three.js 等），切換到該分頁時才載入
+const ModuleWorkspace = lazy(() => import('./module-ui/ModuleWorkspace'))
 
 export default function App() {
-  useSimulationLoop()
-  useKeyboardShortcuts()
-
-  return (
-    <ReactFlowProvider>
-      <div className="flex h-full flex-col">
-        <Toolbar />
-        {/* 桌機：左側面板；手機：面板改為底部橫向捲動列 */}
-        <div className="flex min-h-0 flex-1 flex-col-reverse md:flex-row">
-          <Palette />
-          <main className="relative min-h-0 flex-1 bg-slate-50">
-            <CircuitCanvas />
-          </main>
-        </div>
-      </div>
-    </ReactFlowProvider>
-  )
+  const workspace = useWorkspace()
+  if (workspace === 'module') {
+    return (
+      <Suspense fallback={<div className="flex h-full items-center justify-center text-slate-500">載入 3D 模組組立…</div>}>
+        <ModuleWorkspace />
+      </Suspense>
+    )
+  }
+  return <CircuitWorkspace />
 }

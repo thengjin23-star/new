@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { createDemoCircuit } from '../fixtures/demoCircuit'
 import { useCircuitStore, type SimStatus } from '../store/circuitStore'
 import { FIT_VIEW_OPTIONS } from './canvasConfig'
+import { WorkspaceTabs } from './WorkspaceTabs'
 import { DemoIcon, NewIcon, PauseIcon, PlayIcon, ResetIcon, RotateIcon, TrashIcon } from './icons'
 
 function ToolButton({
@@ -85,7 +86,7 @@ export function Toolbar() {
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 bg-slate-800 px-2 text-white sm:px-3">
-      <h1 className="mr-2 hidden text-sm font-semibold whitespace-nowrap lg:block">氣動迴路模擬器</h1>
+      <WorkspaceTabs />
 
       {status === 'running' ? (
         <ToolButton onClick={pause} icon={<PauseIcon />} label="暫停" primary />

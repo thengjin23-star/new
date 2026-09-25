@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { complement, formatSpec, formatSpecShort } from '../specs'
+import { parseSpec } from '../parse'
+import { complement, formatSpec, formatSpecShort, specToText } from '../specs'
 import { spec } from './helpers'
 
 describe('顯示格式', () => {
@@ -39,4 +40,15 @@ describe('complement', () => {
     expect(complement(spec('安裝面：X', { interfaceRole: 'plug' }))).toEqual(spec('安裝面：X', { interfaceRole: 'socket' }))
     expect(complement(spec('安裝面：X'))).toEqual(spec('安裝面：X'))
   })
+})
+
+describe('specToText', () => {
+  it.each(['R1/4', 'Rc1/8', 'PF1/8 公', 'PS1/4', 'NPT1/8 公', 'NPTF1/4 母', 'M5 母', 'M6x0.75 公', '10-32UNF 公', 'Ø6 快插', 'Ø1/4" 插管'])(
+    '%s 轉成文字後可解析回相同規格',
+    (input) => {
+      const original = spec(input)
+      const again = parseSpec(specToText(original))
+      expect(again.ok && again.spec).toEqual(original)
+    },
+  )
 })
