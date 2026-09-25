@@ -1,0 +1,65 @@
+@import 'tailwindcss';
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui, -apple-system, 'Segoe UI', 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+/* ---- 元件的埠（React Flow handle） ---- */
+.react-flow__handle.port-handle {
+  width: 10px;
+  height: 10px;
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+  border: 2px solid #334155;
+  border-radius: 9999px;
+}
+
+.react-flow__handle.port-handle:hover,
+.react-flow__handle.port-handle.connectingto,
+.react-flow__handle.port-handle.connectingfrom {
+  background: #bfdbfe;
+  border-color: #2563eb;
+}
+
+/* 模擬中：埠縮小成接頭，顏色由元件依壓力狀態以 inline style 指定 */
+.is-simulating .react-flow__handle.port-handle {
+  width: 8px;
+  height: 8px;
+}
+
+.react-flow__handle.port-handle.port-warning,
+.is-simulating .react-flow__handle.port-handle.port-warning {
+  width: 14px;
+  height: 14px;
+  background: #fef3c7;
+  border-color: #f59e0b;
+  animation: port-warning 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes port-warning {
+  from {
+    box-shadow: 0 0 0 0 rgb(245 158 11 / 0.6);
+  }
+  to {
+    box-shadow: 0 0 0 7px rgb(245 158 11 / 0);
+  }
+}
+
+/* 觸控裝置：放大埠方便點選 */
+@media (pointer: coarse) {
+  .react-flow__handle.port-handle {
+    width: 18px;
+    height: 18px;
+  }
+}
