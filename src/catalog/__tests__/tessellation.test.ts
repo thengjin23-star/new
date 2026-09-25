@@ -1,0 +1,75 @@
+import { describe, expect, it } from 'vitest'
+import { detectCadFormat, readCad } from '../cad'
+import { deserializeTessellation, faceOfTriangle, serializeTessellation } from '../tessellation'
+import { nodeOcct, readSample, sampleManifest } from './nodeHelpers'
+
+const load = async (file: string) => readCad(await nodeOcct(), await readSample(file), 'step')
+
+describe('讀取 STEP（occt-import-js）', () => {
+  it('每個範例零件都能讀取，且 B-rep 面範圍完整涵蓋所有三角形', async () => {
+    for (const part of sampleManifest().parts) {
+      const t = await load(part.file)
+      expect(t.parts.length, part.file).toBeGreaterThan(0)
+      for (const p of t.parts) {
+        const triangles = p.indices.length / 3
+        expect(p.positions.length).toBe(p.normals.length)
+        expect(p.faceRanges[0]).toBe(0)
+        for (let k = 2; k < p.faceRanges.length; k += 2) expect(p.faceRanges[k]).toBe(p.faceRanges[k - 1] + 1)
+        expect(p.faceRanges[p.faceRanges.length - 1]).toBe(triangles - 1)
+      }
+    }
+  })
+
+  it('保留零件名稱與顏色、單位為 mm（外形尺寸與建模參數一致）', async () => {
+    const t = await load('DEMO-VALVE-52-01.step')
+    expect(t.parts.map((p) => p.name)).toEqual(['BODY', 'SOLENOID'])
+    expect(t.parts[1].color).not.toBeNull()
+    expect(t.bbox.min[0]).toBeCloseTo(-35, 1)
+    expect(t.bbox.max[0]).toBeCloseTo(62, 1)
+    expect(t.bbox.min[2]).toBeCloseTo(0, 1)
+    // 本體頂面 z = 34，電磁線圈上的手動按鈕到 z = 35
+    expect(t.bbox.max[2]).toBeCloseTo(35, 1)
+  })
+
+  it('faceOfTriangle 以二分搜尋找到三角形所屬的面', async () => {
+    const [body] = (await load('DEMO-BUSH-R14-RC18.step')).parts
+    const faces = body.faceRanges.length / 2
+    for (let f = 0; f < faces; f++) {
+      expect(faceOfTriangle(body, body.faceRanges[f * 2])).toBe(f)
+      expect(faceOfTriangle(body, body.faceRanges[f * 2 + 1])).toBe(f)
+    }
+    expect(faceOfTriangle(body, body.indices.length)).toBe(-1)
+  })
+
+  it('二進位序列化來回一致', async () => {
+    const t = await load('DEMO-CYL-16-50.step')
+    const back = deserializeTessellation(serializeTessellation(t))
+    expect(back.bbox).toEqual(t.bbox)
+    expect(back.triangleCount).toBe(t.triangleCount)
+    back.parts.forEach((p, i) => {
+      const o = t.parts[i]
+      expect(p.name).toBe(o.name)
+      expect(p.color).toEqual(o.color)
+      expect(Array.from(p.positions)).toEqual(Array.from(o.positions))
+      expect(Array.from(p.normals)).toEqual(Array.from(o.normals))
+      expect(Array.from(p.indices)).toEqual(Array.from(o.indices))
+      expect(Array.from(p.faceRanges)).toEqual(Array.from(o.faceRanges))
+    })
+  })
+
+  it('序列化資料損毀時丟出錯誤', () => {
+    expect(() => deserializeTessellation(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))).toThrow('格式錯誤')
+  })
+
+  it('無效的 STEP 內容丟出中文錯誤', async () => {
+    const occt = await nodeOcct()
+    expect(() => readCad(occt, new TextEncoder().encode('not a step file'), 'step')).toThrow('無法讀取')
+  })
+
+  it('依副檔名判斷格式', () => {
+    expect(detectCadFormat('PC6-01.STP')).toBe('step')
+    expect(detectCadFormat('a.step')).toBe('step')
+    expect(detectCadFormat('a.IGS')).toBe('iges')
+    expect(detectCadFormat('a.stl')).toBeNull()
+  })
+})
