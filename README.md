@@ -2,15 +2,17 @@
 
 瀏覽器中的氣動工具，有兩個工作區（上方分頁切換）：
 
-- **迴路圖**：拖拉氣動元件、用管線連接，按下播放即可看到模擬結果：有壓管線變色、閥門切換、氣缸活塞實際伸出縮回。
-  目標使用者為學校師生、工廠新進人員與業務展示。
+- **迴路圖**：拖拉氣動元件或**公司的產品**、用管線連接，按下播放即可看到模擬結果：有壓管線變色、閥門切換、
+  速度控制閥改變氣缸速度、壓力錶顯示壓力。可以標註元件標號與型號、存成多份迴路、匯出 BOM。
 - **模組組立（3D）**：匯入公司產品的 STEP 檔，在 3D 上點選孔定義埠與螺紋規格，把單一元件組成模組；
   系統自動檢查螺紋／管徑搭配、建議轉接頭、產生 BOM。產品與埠會被記住，越用越完整。
 
+兩個分頁共用同一份**產品庫**：在「模組組立」匯入的產品，切到「迴路圖」就能直接放進迴路模擬。
 可安裝到手機主畫面（PWA），離線也能使用。
 
-> 迴路圖目前支援：氣源、5/2 手動閥、雙動氣缸、排氣口／消音器。
-> 模組組立為 M1 里程碑；圖面輸出（2D PDF／DXF、3D STEP）與 3D 氣動模擬在後續里程碑。
+> 元件：氣源、過濾器、調壓閥、給油器、三點組合、壓力錶；5/2 手動閥、5/2 單電控／雙電控、5/3 中位封閉／排氣／加壓、
+> 3/2 常閉／常開電磁閥、3/2 按鈕閥、2/2 電磁閥；單向閥、速度控制閥（單向節流）、雙向節流閥；雙動／單動氣缸；排氣口、消音器、塞頭。
+> 圖面輸出（2D PDF／DXF、3D STEP）與 3D 氣動模擬在後續里程碑。
 
 ## 快速開始
 
@@ -28,16 +30,42 @@ node scripts/make-sample-parts.mjs   # 重新產生範例零件（public/samples
 
 ## 迴路圖：操作方式
 
-**五秒驗收**：按工具列「載入範例」→「播放」→ 點擊閥門。
+**五秒驗收**：工具列「範例」→「單電控閥＋速度控制」→「播放」→ 點閥左邊的電磁線圈。
 
 | 模式 | 可以做的事 |
 |---|---|
-| **編輯中**（重置後） | 從左側面板拖拉元件到畫布（或**點一下**放到畫面中央，觸控裝置請用這個方式）；從一個埠拖到另一個埠建立管線；點選元件或管線後按「旋轉 90°」／`R`、「刪除」／`Delete` |
-| **模擬中／已暫停** | 拓樸鎖定不可編輯；**點擊閥門切換閥位**；暫停時點擊閥門，管線顏色也會立即更新 |
+| **編輯中**（重置後） | 從左側「元件」或「產品庫」拖拉到畫布（或**點一下**放到畫面中央的空位，觸控裝置請用這個方式）；從一個埠拖到另一個埠建立管線；選取後旋轉（`R`）、鏡射（`H`）、刪除（`Delete`） |
+| **模擬中／已暫停** | 拓樸鎖定不可編輯；**點擊閥門或電磁線圈**切換（通電的線圈為黃色）；按鈕閥要**按住**；右側「模擬監看」可即時調整節流開度與設定壓力 |
 
 - 管線顏色：**藍色＝有壓**、**淺灰＝排氣（通大氣）**、**深灰＝無壓（封閉）**；氣缸腔室有壓時填淺藍。
-- 5/2 閥的 EA／EB **必須接到排氣口元件**才算通大氣（嚴格語意，符合實際接管）。模擬時未接的排氣埠會以琥珀色閃爍標示並顯示提示。
-- 電路會自動存到瀏覽器（localStorage），重新整理或離線開啟都還在。「新電路」清空畫布。
+- 閥的排氣埠（EA／EB／R）**必須接到排氣口或消音器**才算通大氣（嚴格語意，符合實際接管）。未接的排氣埠會以琥珀色標示。
+- 速度控制閥（單向節流）：1 → 2 自由流動、2 → 1 經節流；裝在氣缸口（2 接氣缸、1 接閥）即為排氣節流。
+  氣缸速度取進氣側與排氣側較窄者，開度 25% 時約需 4 倍時間走完行程。
+- 右側**屬性面板**（窄螢幕用畫布左上角的「屬性」開啟）：
+  - 選取元件：元件類型（埠相同的可直接互換，例如單電控 ↔ 雙電控）、**標號**（自動編號 1A1、1V1、0Z1，可修改）、
+    **指定產品**（型號顯示在符號旁、列入 BOM）、參數（缸徑、行程、行程時間、節流開度、設定壓力…）、備註。
+  - 沒有選取：電路名稱／客戶／備註、**檢查清單**（未接的埠、缺少氣源、標號重複、兩端快插管徑不同…，點一下跳到該元件）、
+    **BOM**、埠代號顯示方式（字母 P A B 或 ISO 數字 1 4 2）。
+- **檔案**選單：新電路、開啟…（這台裝置的電路清單）、儲存、另存新檔、匯入／匯出 `.pcir`（寄給同事或換裝置）、匯出 BOM（CSV）。
+  目前畫面也會自動存到瀏覽器，重新整理或離線開啟都還在。
+- 快捷鍵：`Ctrl+Z`／`Ctrl+Y` 復原／重做、`Ctrl+C`／`Ctrl+V` 複製貼上、`Ctrl+D` 複製一份、`Ctrl+A` 全選、`Ctrl+S` 儲存、
+  `R` 旋轉、`H` 鏡射、`Delete` 刪除。另可加入**文字註解**（雙擊編輯）。
+
+### 產品的氣動功能
+
+產品要放進迴路圖，需要知道它是哪一種元件（例如 5/2 單電控閥）。系統依**分類、埠數與名稱**自動判斷：
+
+| 產品 | 判斷為 | 埠對應 |
+|---|---|---|
+| 閥（5 口） | 5/2 單電控閥（名稱含「雙電控」「5/3 中位排氣」等會改判） | P/A/B/EA/EB，也認得 1/4/2/5/3、R1/R2 |
+| 閥（3 口／2 口） | 3/2 常閉（名稱含「常開」「按鈕」會改判）／2/2 常閉 | 3 口時 A = 2、R = 3 |
+| 氣缸 | 雙動（1 個埠為單動），並從型號帶入缸徑與行程（`CDJ2B16-50`、`Ø16 × 50`、`SC32X100`） | A、B |
+| 速度控制閥 | 速度控制閥（單向節流） | 螺紋側 = 2（氣缸側）、快插側 = 1（閥側） |
+| 消音器、三點組合（過濾／調壓／給油） | 對應元件 | IN/OUT |
+| 接頭、轉接頭、集裝座 | 不畫在迴路圖（以管線表示） | — |
+
+自動判斷的產品會標示「自動判斷」；在迴路圖的屬性面板或 3D「零件」頁的「氣動功能」可以確認或修改（類型、埠對應、參數），
+兩個分頁與其他瀏覽器分頁會同步更新。
 
 ### 在手機上使用
 
@@ -86,7 +114,8 @@ node scripts/make-sample-parts.mjs   # 重新產生範例零件（public/samples
 
 ### 資料存放與分享
 
-- 產品（含原始 STEP 檔與三角網格）與模組存在**這台電腦的瀏覽器**（IndexedDB），重新整理、離線都還在。
+- 產品（含原始 STEP 檔與三角網格）、模組與迴路圖清單存在**這台電腦的瀏覽器**（IndexedDB），重新整理、離線都還在；
+  系統會請瀏覽器將資料設為永久保存。迴路圖可用 `.pcir` 匯出／匯入。
 - 「匯出產品庫」產生 `.plib`、「匯出模組」產生 `.pmod`（含用到的產品）；同事匯入時會與他的產品庫合併：
   已有的產品保留本機設定、補上缺少的埠與規格，有差異的會列出來。**請定期匯出產品庫備份**（清除瀏覽器資料會刪除它）。
 - 第一次匯入 STEP 時會下載約 7.6 MB 的 3D 解析元件（WebAssembly），之後離線也能使用。
@@ -104,24 +133,27 @@ node scripts/make-sample-parts.mjs   # 重新產生範例零件（public/samples
 src/
 ├── engine/                 模擬引擎：純 TypeScript，不依賴 React（由 purity.test.ts 把關）
 │   ├── types.ts              PortState、Circuit、SimState 等核心型別
-│   ├── definition.ts         ComponentDefinition 介面（新增元件要實作的東西）
+│   ├── definition.ts         ComponentDefinition 介面（新增元件要實作的東西）、參數與通路定義
 │   ├── registry.ts           元件註冊表
-│   ├── components/           各元件的行為定義
-│   ├── solve.ts              圖走訪 → 每個埠／管線的壓力狀態
+│   ├── components/           各元件的行為定義；valveFactory 由閥規格產生各種方向控制閥
+│   ├── solve.ts / graph.ts   有向圖走訪與最寬路徑 → 每個埠的壓力狀態、供排氣能力、壓力值
 │   ├── step.ts               step()、interact()、createInitialState()
-│   ├── diagnostics.ts        找出未接排氣口的排氣埠
+│   ├── params.ts             參數預設值與範圍
+│   ├── diagnostics.ts        找出未接的埠
 │   └── __tests__/            Vitest 單元測試
 ├── components/
-│   ├── symbols/              ISO 1219 風格 SVG 符號＋埠座標，以及外觀註冊表
-│   ├── nodes/PneumaticNode   所有元件共用的 React Flow 節點（處理旋轉與埠）
+│   ├── symbols/              ISO 1219 風格 SVG 符號＋埠座標，以及外觀註冊表（閥由規格自動產生）
+│   ├── nodes/                元件節點（旋轉、鏡射、標號、線圈點擊）與文字註解
 │   ├── edges/TubeEdge        依壓力狀態上色的管線
-│   └── CircuitCanvas / Palette / Toolbar / Legend
-├── store/                  Zustand store（拓樸＋模擬狀態，拓樸自動存檔）
+│   ├── PneumaticFunctionEditor  產品「氣動功能」編輯（兩個分頁共用）
+│   └── CircuitCanvas / Palette / CircuitInspector / Toolbar / CircuitDialogs / Legend
+├── store/                  迴路圖的 Zustand store（復原、剪貼簿、自動存檔）、電路檔案、BOM、檢查、標號
 ├── hooks/                  requestAnimationFrame 模擬迴圈、鍵盤快捷鍵
-├── fixtures/demoCircuit.ts 「載入範例」的驗收電路
+├── fixtures/examples.ts    「範例」選單的迴路
 │
 ├── threads/                螺紋／管徑／安裝面規格：尺寸表、解析器（PT／PF／PS）、checkMate、依直徑建議（純 TS）
-├── catalog/                產品庫：STEP 匯入（occt-import-js＋Web Worker）、IndexedDB、面分析（點選孔 → 埠）、.plib／.pmod
+├── catalog/                產品庫：STEP 匯入（occt-import-js＋Web Worker）、IndexedDB、面分析（點選孔 → 埠）、.plib／.pmod、
+│                           兩個分頁共用的產品庫 store（library.ts）、氣動功能判斷（pneumatic.ts）
 ├── assembly/               模組：鎖合座標變換、群組移動、轉接頭搜尋、BOM
 ├── geometry/               向量、3×3 特徵分解、圓擬合
 └── module-ui/              3D 工作區（React Three Fiber）：畫面、產品庫、屬性、埠編輯、連接檢查
@@ -145,40 +177,46 @@ public/samples/                  範例零件（閥、接頭、消音器、速�
 不做流體力學計算，採「邏輯走訪＋簡化物理」：
 
 1. 每個元件定義自己的埠，以及依目前狀態決定的**內部通路**（例如 5/2 閥位置 0：P→A、B→EB）。
-2. `solve()`：以「埠」為節點、「管線＋內部通路」為邊建圖，分別從所有氣源埠與所有排氣埠做廣度優先走訪。
-   每個埠的狀態為 `pressure`（連到氣源）、`exhaust`（未連到氣源但連到排氣口）或 `blocked`。
-3. `step(circuit, state, dt)`：純函式。先 solve，依結果呼叫各元件的 `update`（氣缸：A 有壓且 B 排氣 → 伸出；
-   反之縮回；其餘停止；以固定速度移動並夾在 0~1），再 solve 一次讓回傳的壓力與回傳的元件狀態一致。
-4. 畫面以 `requestAnimationFrame` 驅動，單幀 `dt` 上限 0.05 秒，避免切換分頁回來時活塞瞬移。
+   通路可以是雙向全開的 `[a, b]`，或 `{ from, to, oneWay, capacity, maxPressure }`：單向（單向閥）、
+   節流（capacity 0–1）、限壓（調壓閥出口）。
+2. `solve()`：以「埠」為節點、「管線（雙向）＋內部通路」為邊建立有向圖。
+   從氣源往前走得到**有壓**、在反向圖上從排氣口走得到**能排氣**；有壓優先。
+   另以最寬路徑（沿途最窄處取最大）算出每個埠的**供氣能力**、**排氣能力**與**壓力值**（氣源壓力經調壓閥限制）。
+3. `step(circuit, state, dt)`：純函式。先 solve，依結果呼叫各元件的 `update`
+   （雙動氣缸：A 有壓且 B 排氣 → 伸出，速度 = min(進氣能力, 排氣能力) ÷ 全開行程時間；單動氣缸排氣時彈簧復歸），
+   再 solve 一次讓回傳的壓力與回傳的元件狀態一致。
+4. `interact(circuit, state, nodeId, reg, action)`：使用者操作，例如 `'toggle'`（點本體）、`'coil:l'`（點左側線圈）、
+   `'press'`／`'release'`（按鈕閥）。
+5. 元件參數（缸徑、行程時間、節流開度、設定壓力…）放在節點上，引擎呼叫時會套用預設值與範圍（`resolveParams`）。
+6. 畫面以 `requestAnimationFrame` 驅動，單幀 `dt` 上限 0.05 秒，避免切換分頁回來時活塞瞬移。
 
 效能上，React Flow 只持有拓樸；每個節點／管線以 Zustand selector 只訂閱自己的那一小片模擬狀態
 （壓力狀態刻意設計為字串 primitive），因此每幀只有真正變化的元件會重繪。
 
 ## 如何新增元件
 
-以 3/2 手動閥為例：
+**方向控制閥**只要在 `src/engine/components/valves.ts` 的 `VALVE_SPECS` 加一筆規格（方格內的通道、靜止位、左右操作方式），
+行為與 ISO 符號都由同一份規格產生：
 
-1. **行為**：在 `src/engine/components/` 新增 `valve32Manual.ts`
+```ts
+valve32Button: {
+  type: 'valve32Button',
+  label: '3/2 按鈕閥（常閉）',
+  portSet: 3,                          // P A R
+  boxes: [[['P', 'A']], [['A', 'R']]], // 由左到右的方格：作動位、靜止位
+  rest: 1,
+  left: ['button'],
+  right: ['spring'],
+  mode: 'button',                      // 按住作動、放開復歸
+},
+```
 
-   ```ts
-   export const valve32Manual = defineComponent<{ open: boolean }>({
-     type: 'valve32Manual',
-     label: '3/2 手動閥',
-     category: 'valve',
-     ports: [
-       { id: 'P', role: 'supply' },
-       { id: 'A', role: 'working' },
-       { id: 'R', role: 'exhaust' },
-     ],
-     createState: () => ({ open: false }),
-     getInternalPaths: (s) => (s.open ? [['P', 'A']] : [['A', 'R']]),
-     onInteract: (s) => ({ open: !s.open }),
-   })
-   ```
+**其他元件**：
 
-   並加入 `src/engine/components/index.ts` 的 `builtinComponents`。需要逐幀物理（如單動氣缸的彈簧回位）就實作 `update`。
-2. **外觀**：在 `src/components/symbols/` 新增 `Valve32Symbol.tsx`，匯出 `{ width, height, ports, Symbol }`，
-   並加入 `symbolRegistry.ts`。埠座標以未旋轉的符號為準，旋轉由節點統一處理。
-3. `npm test`：`symbolRegistry.test.ts` 會檢查兩份註冊表的 type 與埠是否一致。
+1. **行為**：在 `src/engine/components/` 以 `defineComponent` 定義埠、參數、內部通路、`update`／`onInteract`，
+   並加入 `src/engine/components/index.ts` 的 `builtinComponents`。
+2. **外觀**：在 `src/components/symbols/` 新增 `*Symbol.tsx`，匯出 `{ width, height, ports, Symbol }`，
+   並加入 `symbolRegistry.ts`。埠座標以未旋轉的符號為準，旋轉與鏡射由節點統一處理。
+3. `npm test`：`symbolRegistry.test.ts` 會檢查兩份註冊表的 type 與埠是否一致；`registry.test.ts` 檢查結構。
 
-引擎本身（solve／step）不需要修改；`registry.test.ts` 內有一個以 3/2 閥＋單動氣缸示範擴充的測試。
+引擎本身（solve／step）不需要修改；`registry.test.ts` 內有一個以註冊表外的 3/2 閥＋單動氣缸示範擴充的測試。

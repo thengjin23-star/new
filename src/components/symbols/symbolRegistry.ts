@@ -1,8 +1,11 @@
+import { filterSymbol, frlSymbol, lubricatorSymbol, pressureGaugeSymbol, regulatorSymbol } from './AirPrepSymbol'
 import { airSupplySymbol } from './AirSupplySymbol'
 import { cylinderDoubleSymbol } from './CylinderDoubleSymbol'
-import { exhaustSymbol } from './ExhaustSymbol'
+import { cylinderSingleSymbol } from './CylinderSingleSymbol'
+import { exhaustSymbol, plugSymbol, silencerSymbol } from './ExhaustSymbol'
+import { checkValveSymbol, flowControlSymbol, throttleSymbol } from './FlowControlSymbol'
 import type { SymbolDef } from './types'
-import { valve52Symbol } from './Valve52Symbol'
+import { valveSymbols } from './ValveSymbol'
 
 /**
  * 元件外觀註冊表：以與引擎註冊表（src/engine/registry.ts）相同的 type 為 key。
@@ -10,9 +13,20 @@ import { valve52Symbol } from './Valve52Symbol'
  */
 export const symbolRegistry: Readonly<Record<string, SymbolDef>> = {
   airSupply: airSupplySymbol,
-  valve52Manual: valve52Symbol,
+  filter: filterSymbol,
+  regulator: regulatorSymbol,
+  lubricator: lubricatorSymbol,
+  frl: frlSymbol,
+  pressureGauge: pressureGaugeSymbol,
+  ...valveSymbols,
+  checkValve: checkValveSymbol,
+  flowControl: flowControlSymbol,
+  throttle: throttleSymbol,
   cylinderDouble: cylinderDoubleSymbol,
+  cylinderSingle: cylinderSingleSymbol,
   exhaust: exhaustSymbol,
+  silencer: silencerSymbol,
+  plug: plugSymbol,
 }
 
 export function getSymbol(type: string): SymbolDef {

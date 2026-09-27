@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findUnconnectedExhaustPorts } from '../diagnostics'
+import { findUnconnectedExhaustPorts, findUnconnectedPorts } from '../diagnostics'
 import { acceptanceCircuit } from './fixtures'
 
 describe('findUnconnectedExhaustPorts', () => {
@@ -19,5 +19,13 @@ describe('findUnconnectedExhaustPorts', () => {
 
   it('排氣口元件本身的埠沒接時不算警告', () => {
     expect(findUnconnectedExhaustPorts({ nodes: [{ id: 'e', type: 'exhaust' }], tubes: [] })).toEqual([])
+  })
+})
+
+describe('findUnconnectedPorts', () => {
+  it('列出所有沒接管線的埠', () => {
+    const circuit = acceptanceCircuit({ withExhausts: false })
+    expect(findUnconnectedPorts(circuit).sort()).toEqual(['v:EA', 'v:EB'])
+    expect(findUnconnectedPorts(acceptanceCircuit())).toEqual([])
   })
 })

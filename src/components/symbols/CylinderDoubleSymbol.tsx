@@ -7,24 +7,26 @@ import type { SymbolDef, SymbolProps } from './types'
  * 雙動氣缸：缸筒、活塞、活塞桿。A 為後端（無桿側）、B 為前端（有桿側）。
  * 活塞位置直接取自引擎（以 requestAnimationFrame 逐幀推進），因此不需要 CSS transition。
  */
-const BARREL_X = 8
-const BARREL_W = 140
-const BARREL_Y = 6
-const BARREL_H = 36
-const PISTON_MIN_X = 24
-const TRAVEL = 102
-const PISTON_W = 6
-const ROD_LEN = 150
-const ROD_H = 6
-const PORT_A_X = 18
+export const BARREL_X = 8
+export const BARREL_W = 140
+export const BARREL_Y = 6
+export const BARREL_H = 36
+export const PISTON_MIN_X = 24
+export const TRAVEL = 102
+export const PISTON_W = 6
+export const ROD_LEN = 150
+export const ROD_H = 6
+export const PORT_A_X = 18
 const PORT_B_X = 138
-const WIDTH = PISTON_MIN_X + TRAVEL + PISTON_W + ROD_LEN + 8
-const HEIGHT = 64
+export const CYLINDER_WIDTH = PISTON_MIN_X + TRAVEL + PISTON_W + ROD_LEN + 8
+export const CYLINDER_HEIGHT = 64
+const WIDTH = CYLINDER_WIDTH
+const HEIGHT = CYLINDER_HEIGHT
 const BARREL_BOTTOM = BARREL_Y + BARREL_H
 
-const chamberFill = (state: PortState | undefined) => (state === 'pressure' ? CHAMBER_PRESSURE_FILL : 'white')
+export const chamberFill = (state: PortState | undefined) => (state === 'pressure' ? CHAMBER_PRESSURE_FILL : 'white')
 
-function CylinderDouble({ state, ports, rotation }: SymbolProps) {
+function CylinderDouble({ state, ports, rotation, flip, labels }: SymbolProps) {
   const { piston } = state as CylinderState
   const px = PISTON_MIN_X + piston * TRAVEL
   const rodY = BARREL_Y + BARREL_H / 2 - ROD_H / 2
@@ -52,8 +54,12 @@ function CylinderDouble({ state, ports, rotation }: SymbolProps) {
       {/* 活塞 */}
       <rect x={px} y={BARREL_Y + 1} width={PISTON_W} height={BARREL_H - 2} fill={SYMBOL_STROKE} />
 
-      <PortLabel x={PORT_A_X + 10} y={HEIGHT - 8} rotation={rotation}>A</PortLabel>
-      <PortLabel x={PORT_B_X - 10} y={HEIGHT - 8} rotation={rotation}>B</PortLabel>
+      <PortLabel x={PORT_A_X + 10} y={HEIGHT - 8} rotation={rotation} flip={flip}>
+        {labels?.A ?? 'A'}
+      </PortLabel>
+      <PortLabel x={PORT_B_X - 10} y={HEIGHT - 8} rotation={rotation} flip={flip}>
+        {labels?.B ?? 'B'}
+      </PortLabel>
     </g>
   )
 }

@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { ModuleDoc } from '../assembly/types'
+import type { CircuitDoc } from '../store/circuitDoc'
 import type { Tessellation } from './tessellation'
 import type { Product } from './types'
 
@@ -21,9 +22,12 @@ interface CatalogSchema extends DBSchema {
   /** 三角化結果快取，避免每次開啟都重新解析 */
   meshes: { key: string; value: StoredMesh }
   modules: { key: string; value: ModuleDoc }
+  /** 迴路圖（v2） */
+  circuits: { key: string; value: CircuitDoc }
 }
 
 export const CATALOG_DB = 'pneumatic-catalog'
+const DB_VERSION = 2
 
 /** 產品庫與模組的本機儲存（IndexedDB） */
 export class CatalogStore {
@@ -33,16 +37,32 @@ export class CatalogStore {
     this.db = db
   }
 
-  static async open(name = CATALOG_DB): Promise<CatalogStore> {
-    const db = await openDB<CatalogSchema>(name, 1, {
-      upgrade(db) {
-        const products = db.createObjectStore('products', { keyPath: 'id' })
-        products.createIndex('by-sha', 'source.sha256', { unique: true })
-        db.createObjectStore('files', { keyPath: 'sha256' })
-        db.createObjectStore('meshes', { keyPath: 'sha256' })
-        db.createObjectStore('modules', { keyPath: 'id' })
+  /**
+   * @param onBlocked 升級資料庫時，其他分頁（舊版程式）仍開著資料庫：提醒使用者關閉它們
+   */
+  static async open(name = CATALOG_DB, onBlocked?: () => void): Promise<CatalogStore> {
+    let opened: IDBPDatabase<CatalogSchema> | undefined
+    const db = await openDB<CatalogSchema>(name, DB_VERSION, {
+      // 依版本逐步升級：舊資料原封不動，只補上新的 object store
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const products = db.createObjectStore('products', { keyPath: 'id' })
+          products.createIndex('by-sha', 'source.sha256', { unique: true })
+          db.createObjectStore('files', { keyPath: 'sha256' })
+          db.createObjectStore('meshes', { keyPath: 'sha256' })
+          db.createObjectStore('modules', { keyPath: 'id' })
+        }
+        if (oldVersion < 2) db.createObjectStore('circuits', { keyPath: 'id' })
+      },
+      // 另一個分頁要升級資料庫時，先關閉這裡的連線，避免對方卡住
+      blocking() {
+        opened?.close()
+      },
+      blocked() {
+        onBlocked?.()
       },
     })
+    opened = db
     return new CatalogStore(db)
   }
 
@@ -114,6 +134,20 @@ export class CatalogStore {
   }
   async deleteModule(id: string): Promise<void> {
     await this.db.delete('modules', id)
+  }
+
+  // ---- 迴路圖 ----
+  listCircuits(): Promise<CircuitDoc[]> {
+    return this.db.getAll('circuits')
+  }
+  getCircuit(id: string): Promise<CircuitDoc | undefined> {
+    return this.db.get('circuits', id)
+  }
+  async putCircuit(circuit: CircuitDoc): Promise<void> {
+    await this.db.put('circuits', circuit)
+  }
+  async deleteCircuit(id: string): Promise<void> {
+    await this.db.delete('circuits', id)
   }
 
   /** 使用到某個產品的模組（刪除產品前提醒用） */

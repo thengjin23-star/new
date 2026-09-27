@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react'
 import { buildBom } from '../assembly/bom'
 import { getPort, mateChecks, mateRotation } from '../assembly/moduleOps'
+import { effectivePneumatic, isCircuitType, pneumaticTypeLabel } from '../catalog/pneumatic'
 import { CATEGORY_LABEL, type Product, type ProductCategory } from '../catalog/types'
+import { PneumaticFunctionDialog } from '../components/PneumaticFunctionEditor'
+import { SymbolPreview } from '../components/SymbolPreview'
 import { formatSpec, type MateLevel } from '../threads'
 import { portLabel } from './labels'
 import { useModuleStore } from './moduleStore'
-import { LEVEL_COLOR } from './levels'
-import { Button, Empty, LevelBadge } from './ui'
+import { LEVEL_COLOR } from '../components/levels'
+import { Button, Empty, LevelBadge } from '../components/ui'
 
 type Tab = 'part' | 'check' | 'bom'
 
@@ -77,6 +80,7 @@ function PartTab() {
   return (
     <div className="space-y-4 p-3">
       <ProductForm key={product.id} product={product} />
+      <PneumaticSection product={product} />
       <section>
         <header className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-700">埠（{product.ports.length}）</h3>
@@ -148,6 +152,41 @@ function ProductForm({ product }: { product: Product }) {
       <p className="text-[11px] text-slate-400">
         來源檔案：{product.source.fileName}（{(product.source.bytes / 1024).toFixed(0)} KB）
       </p>
+    </section>
+  )
+}
+
+/** 產品的氣動功能：在迴路圖中是哪一種元件（兩個分頁共用） */
+function PneumaticSection({ product }: { product: Product }) {
+  const [editing, setEditing] = useState(false)
+  const pn = effectivePneumatic(product)
+  const mapped = pn ? Object.keys(pn.portMap).length : 0
+  return (
+    <section className="rounded-md border border-slate-200 p-2">
+      <header className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">氣動功能</h3>
+        <Button size="sm" onClick={() => setEditing(true)}>
+          {pn ? '編輯' : '設定'}
+        </Button>
+      </header>
+      {pn ? (
+        <div className="mt-1.5 flex items-center gap-2">
+          {isCircuitType(pn.type) && (
+            <div className="h-10 w-14 shrink-0 rounded border border-slate-100 bg-slate-50 p-0.5">
+              <SymbolPreview type={pn.type} params={pn.params} className="h-full w-full" />
+            </div>
+          )}
+          <div className="min-w-0 text-xs leading-5 text-slate-600">
+            <p className="truncate">{pneumaticTypeLabel(pn.type)}</p>
+            <p className="text-slate-400">
+              {pn.inferred ? '自動判斷，請確認' : isCircuitType(pn.type) ? `埠對應 ${mapped} 個` : '不畫在迴路圖'}
+            </p>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-1 text-xs leading-5 text-slate-500">尚未設定：設定後這個產品就能放進「迴路圖」模擬。</p>
+      )}
+      {editing && <PneumaticFunctionDialog product={product} onClose={() => setEditing(false)} />}
     </section>
   )
 }

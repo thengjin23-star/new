@@ -82,7 +82,10 @@
             0
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "valve52Single"
+      }
     },
     {
       "file": "DEMO-FITTING-R18-D6.step",
@@ -120,7 +123,10 @@
             1
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "fitting"
+      }
     },
     {
       "file": "DEMO-FITTING-NPT18-D6.step",
@@ -158,7 +164,10 @@
             1
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "fitting"
+      }
     },
     {
       "file": "DEMO-SILENCER-R18.step",
@@ -181,7 +190,13 @@
             -1
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "silencer",
+        "ports": {
+          "E": "1"
+        }
+      }
     },
     {
       "file": "DEMO-CYL-16-50.step",
@@ -219,7 +234,14 @@
             1
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "cylinderDouble",
+        "params": {
+          "bore": 16,
+          "stroke": 50
+        }
+      }
     },
     {
       "file": "DEMO-SC-M5-D4.step",
@@ -257,7 +279,14 @@
             1
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "flowControl",
+        "ports": {
+          "2": "1",
+          "1": "2"
+        }
+      }
     },
     {
       "file": "DEMO-BUSH-R14-RC18.step",
@@ -295,7 +324,10 @@
             1
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "fitting"
+      }
     },
     {
       "file": "DEMO-MANIFOLD-4.step",
@@ -532,7 +564,10 @@
             0
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "manifold"
+      }
     },
     {
       "file": "DEMO-VALVE-VB.step",
@@ -556,7 +591,10 @@
             -1
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "valve52Single"
+      }
     },
     {
       "file": "DEMO-FRL-F40.step",
@@ -596,7 +634,10 @@
             0
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "filter"
+      }
     },
     {
       "file": "DEMO-FRL-R40.step",
@@ -651,7 +692,13 @@
             0
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "regulator",
+        "params": {
+          "setting": 0.5
+        }
+      }
     },
     {
       "file": "DEMO-FRL-PB40.step",
@@ -690,7 +737,10 @@
             0
           ]
         }
-      ]
+      ],
+      "pneumatic": {
+        "type": "fitting"
+      }
     }
   ]
 }

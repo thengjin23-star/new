@@ -7,7 +7,7 @@ import { MateDialog } from './MateDialog'
 import { ModuleToolbar } from './ModuleToolbar'
 import { useModuleStore } from './moduleStore'
 import { PortEditor } from './PortEditor'
-import { Button } from './ui'
+import { Button } from '../components/ui'
 import { Viewport } from './Viewport'
 import { getPort } from '../assembly/moduleOps'
 

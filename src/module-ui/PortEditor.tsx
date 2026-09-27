@@ -3,7 +3,7 @@ import { makePort } from '../catalog/ports'
 import type { Product, ProductCategory, ProductPort } from '../catalog/types'
 import { fmtNum, formatSpec, parseSpec, specToText, suggestByDiameter, type InterfaceSpec } from '../threads'
 import { useModuleStore } from './moduleStore'
-import { Button, Dialog } from './ui'
+import { Button, Dialog } from '../components/ui'
 
 const NAME_HINTS: Record<ProductCategory, string[]> = {
   valve: ['P', 'A', 'B', 'EA', 'EB', 'R1', 'R2', '安裝面'],

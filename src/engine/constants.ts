@@ -6,3 +6,6 @@ export const CYLINDER_STROKE_SECONDS = 1.2
  * 分頁切到背景再回來時 requestAnimationFrame 的間隔可能長達數秒，夾住它可避免活塞瞬移。
  */
 export const MAX_FRAME_SECONDS = 0.05
+
+/** 氣源的預設壓力（MPa） */
+export const DEFAULT_SUPPLY_PRESSURE = 0.6

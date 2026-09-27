@@ -23,6 +23,8 @@ export interface PortDef {
   /** 元件內唯一的埠代號，例如 'P'、'A'、'EA' */
   id: string
   role: PortRole
+  /** ISO 5599 數字埠號（例如 P = 1、A = 4），畫面可切換以數字顯示 */
+  iso?: string
 }
 
 /** 全域唯一的埠識別：`${nodeId}:${portId}` */
@@ -32,10 +34,18 @@ export function portKey(nodeId: string, portId: string): PortKey {
   return `${nodeId}:${portId}`
 }
 
+/** 元件參數值（缸徑、節流開度、設定壓力…） */
+export type ParamValue = number | string | boolean
+
+/** 參數表：key 對應元件定義中的 ParamDef.key */
+export type Params = Readonly<Record<string, ParamValue>>
+
 export interface CircuitNode {
   id: string
   /** 元件註冊表中的 type */
   type: string
+  /** 覆寫元件定義中預設值的參數；未提供的 key 使用預設值 */
+  params?: Params
 }
 
 /** 管線：無方向，連接兩個埠 */
@@ -57,6 +67,15 @@ export type ComponentStates = Readonly<Record<string, unknown>>
 export interface SolveResult {
   portStates: Readonly<Record<PortKey, PortState>>
   tubeStates: Readonly<Record<string, PortState>>
+  /**
+   * 各埠的供氣能力（0–1）：從氣源到此埠，沿途最窄處的通過能力（節流開度）。
+   * 無壓的埠為 0。氣缸以它決定進氣側的速度。
+   */
+  supplyFlow: Readonly<Record<PortKey, number>>
+  /** 各埠的排氣能力（0–1）：從此埠到排氣口，沿途最窄處的通過能力；無法排氣為 0 */
+  ventFlow: Readonly<Record<PortKey, number>>
+  /** 各埠的壓力（MPa）：氣源壓力經調壓閥限制後的值；無壓為 0 */
+  pressure: Readonly<Record<PortKey, number>>
 }
 
 export interface SimState extends SolveResult {

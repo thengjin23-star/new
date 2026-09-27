@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 import { Quaternion, Vector3 } from 'three'
 import type { ProductPort } from '../catalog/types'
 import { formatSpec, formatSpecShort } from '../threads'
-import { LEVEL_COLOR } from './levels'
+import { LEVEL_COLOR } from '../components/levels'
 import { compatibilityWith, useModuleStore } from './moduleStore'
 
 const Y = new Vector3(0, 1, 0)

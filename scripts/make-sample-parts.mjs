@@ -63,7 +63,7 @@ function part(file, meta, shapes, ports) {
   const solenoid = box(35, -10, 3, 62, 10, 31).fuse(cyl(6, 4, [48, 0, 31]))
   part(
     'DEMO-VALVE-52-01.step',
-    { modelCode: 'DEMO-VALVE-52-01', name: '範例 5/2 電磁閥（管接式 Rc1/8）', category: 'valve' },
+    { modelCode: 'DEMO-VALVE-52-01', name: '範例 5/2 電磁閥（管接式 Rc1/8）', category: 'valve', pneumatic: { type: 'valve52Single' } },
     [
       [body, 'BODY', METAL],
       [solenoid, 'SOLENOID', DARK],
@@ -85,7 +85,7 @@ function straightFitting(bossD, bossLen, hexAf, hexH, bodyD, socketD) {
   const f = straightFitting(BOSS.r18, 7, 14, 7, 12, 6)
   part(
     'DEMO-FITTING-R18-D6.step',
-    { modelCode: 'DEMO-FITTING-R18-D6', name: '範例直通快插接頭 R1/8 × Ø6', category: 'fitting' },
+    { modelCode: 'DEMO-FITTING-R18-D6', name: '範例直通快插接頭 R1/8 × Ø6', category: 'fitting', pneumatic: { type: 'fitting' } },
     [
       [f.shape, 'BODY', METAL],
       [f.sleeve, 'RELEASE-SLEEVE', BLUE],
@@ -100,7 +100,7 @@ function straightFitting(bossD, bossLen, hexAf, hexH, bodyD, socketD) {
   const f = straightFitting(BOSS.npt18, 7, 14, 7, 12, 6)
   part(
     'DEMO-FITTING-NPT18-D6.step',
-    { modelCode: 'DEMO-FITTING-NPT18-D6', name: '範例快插接頭 NPT1/8 × Ø6', category: 'fitting' },
+    { modelCode: 'DEMO-FITTING-NPT18-D6', name: '範例快插接頭 NPT1/8 × Ø6', category: 'fitting', pneumatic: { type: 'fitting' } },
     [
       [f.shape, 'BODY', BRASS],
       [f.sleeve, 'RELEASE-SLEEVE', BLUE],
@@ -115,7 +115,7 @@ function straightFitting(bossD, bossLen, hexAf, hexH, bodyD, socketD) {
   const shape = cyl(BOSS.r18, 7, [0, 0, -7]).fuse(hex(14, 5, 0)).fuse(cyl(14, 25, [0, 0, 5]))
   part(
     'DEMO-SILENCER-R18.step',
-    { modelCode: 'DEMO-SILENCER-R18', name: '範例消音器 R1/8', category: 'silencer' },
+    { modelCode: 'DEMO-SILENCER-R18', name: '範例消音器 R1/8', category: 'silencer', pneumatic: { type: 'silencer', ports: { E: '1' } } },
     [[shape, 'SILENCER', '#8a939c']],
     [{ name: '1', spec: 'R1/8', shape: 'boss', origin: [0, 0, 0], axis: [0, 0, -1] }],
   )
@@ -132,7 +132,7 @@ function straightFitting(bossD, bossLen, hexAf, hexH, bodyD, socketD) {
   const rod = cyl(6, 25, [93, 0, 0], [1, 0, 0]).fuse(cyl(5, 8, [118, 0, 0], [1, 0, 0]))
   part(
     'DEMO-CYL-16-50.step',
-    { modelCode: 'DEMO-CYL-16-50', name: '範例氣缸 Ø16 × 50（M5）', category: 'cylinder' },
+    { modelCode: 'DEMO-CYL-16-50', name: '範例氣缸 Ø16 × 50（M5）', category: 'cylinder', pneumatic: { type: 'cylinderDouble', params: { bore: 16, stroke: 50 } } },
     [
       [body, 'BODY', METAL],
       [rod, 'ROD', '#e5e7eb'],
@@ -149,7 +149,7 @@ function straightFitting(bossD, bossLen, hexAf, hexH, bodyD, socketD) {
   const knob = cyl(6, 5, [0, 5, 12], [0, 1, 0])
   part(
     'DEMO-SC-M5-D4.step',
-    { modelCode: 'DEMO-SC-M5-D4', name: '範例速度控制閥 M5 × Ø4', category: 'speedController' },
+    { modelCode: 'DEMO-SC-M5-D4', name: '範例速度控制閥 M5 × Ø4', category: 'speedController', pneumatic: { type: 'flowControl', ports: { 2: '1', 1: '2' } } },
     [
       [shape, 'BODY', METAL],
       [knob, 'KNOB', DARK],
@@ -168,7 +168,7 @@ function straightFitting(bossD, bossLen, hexAf, hexH, bodyD, socketD) {
   shape = shape.cut(cyl(6, 8.4, [0, 0, -9.2]))
   part(
     'DEMO-BUSH-R14-RC18.step',
-    { modelCode: 'DEMO-BUSH-R14-RC18', name: '範例轉接頭 R1/4 × Rc1/8', category: 'fitting' },
+    { modelCode: 'DEMO-BUSH-R14-RC18', name: '範例轉接頭 R1/4 × Rc1/8', category: 'fitting', pneumatic: { type: 'fitting' } },
     [[shape, 'BUSHING', BRASS]],
     [
       { name: '1', spec: 'R1/4', shape: 'boss', origin: [0, 0, 0], axis: [0, 0, -1] },
@@ -201,7 +201,7 @@ const VB_KEY = '安裝面：DEMO-VB 閥座'
   }
   part(
     'DEMO-MANIFOLD-4.step',
-    { modelCode: 'DEMO-MANIFOLD-4', name: '範例集裝座 4 站（Rc1/8）', category: 'manifold' },
+    { modelCode: 'DEMO-MANIFOLD-4', name: '範例集裝座 4 站（Rc1/8）', category: 'manifold', pneumatic: { type: 'manifold' } },
     [[base, 'MANIFOLD', '#9aa5b1']],
     ports,
   )
@@ -216,7 +216,7 @@ const VB_KEY = '安裝面：DEMO-VB 閥座'
   const solenoid = box(-8, -17, 30, 8, -1, 48)
   part(
     'DEMO-VALVE-VB.step',
-    { modelCode: 'DEMO-VALVE-VB', name: '範例底板式電磁閥（集裝座用）', category: 'valve' },
+    { modelCode: 'DEMO-VALVE-VB', name: '範例底板式電磁閥（集裝座用）', category: 'valve', pneumatic: { type: 'valve52Single' } },
     [
       [body, 'BODY', METAL],
       [solenoid, 'SOLENOID', DARK],
@@ -241,7 +241,7 @@ const frlSides = [
   const bowl = cyl(30, 60, [0, 0, -60])
   part(
     'DEMO-FRL-F40.step',
-    { modelCode: 'DEMO-FRL-F40', name: '範例過濾器（模組式 40）', category: 'frl' },
+    { modelCode: 'DEMO-FRL-F40', name: '範例過濾器（模組式 40）', category: 'frl', pneumatic: { type: 'filter' } },
     [
       [frlHead(), 'HEAD', METAL],
       [bowl, 'BOWL', '#94a3b8'],
@@ -255,7 +255,7 @@ const frlSides = [
   const bonnet = cyl(32, 35, [0, 0, 40]).fuse(cyl(20, 15, [0, 0, 75]))
   part(
     'DEMO-FRL-R40.step',
-    { modelCode: 'DEMO-FRL-R40', name: '範例調壓閥（模組式 40）', category: 'frl' },
+    { modelCode: 'DEMO-FRL-R40', name: '範例調壓閥（模組式 40）', category: 'frl', pneumatic: { type: 'regulator', params: { setting: 0.5 } } },
     [
       [head, 'HEAD', METAL],
       [bonnet, 'BONNET', DARK],
@@ -269,7 +269,7 @@ const frlSides = [
   block = block.cut(cyl(HOLE.rc14, 12.4, [-6.2, 0, 20], [1, 0, 0]))
   part(
     'DEMO-FRL-PB40.step',
-    { modelCode: 'DEMO-FRL-PB40', name: '範例 FRL 接管座 Rc1/4（模組式 40）', category: 'frl' },
+    { modelCode: 'DEMO-FRL-PB40', name: '範例 FRL 接管座 Rc1/4（模組式 40）', category: 'frl', pneumatic: { type: 'fitting' } },
     [[block, 'PORT-BLOCK', METAL]],
     [
       { name: '管口', spec: 'Rc1/4', shape: 'hole', origin: [-6, 0, 20], axis: [-1, 0, 0] },

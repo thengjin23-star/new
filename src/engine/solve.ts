@@ -1,3 +1,7 @@
+import { DEFAULT_SUPPLY_PRESSURE } from './constants'
+import { normalizePath } from './definition'
+import { widestPaths, type FlowEdge } from './graph'
+import { resolveParams } from './params'
 import { registry as defaultRegistry, type ComponentRegistry } from './registry'
 import {
   portKey,
@@ -8,30 +12,18 @@ import {
   type SolveResult,
 } from './types'
 
-/** 在無向圖上從多個起點做廣度優先走訪，回傳所有可達的節點 */
-function reachable(adjacency: ReadonlyMap<PortKey, PortKey[]>, starts: readonly PortKey[]): Set<PortKey> {
-  const seen = new Set<PortKey>(starts)
-  const queue = [...starts]
-  for (let i = 0; i < queue.length; i++) {
-    for (const next of adjacency.get(queue[i]) ?? []) {
-      if (!seen.has(next)) {
-        seen.add(next)
-        queue.push(next)
-      }
-    }
-  }
-  return seen
-}
-
 /**
  * 依目前的元件狀態，算出每個埠與每條管線的壓力狀態。
  *
- * 1. 建立無向圖：節點 = 所有埠；邊 = 管線 ∪ 各元件目前的內部通路
- * 2. 從所有氣源埠走訪 → 有壓集合
- * 3. 從所有排氣埠走訪 → 通大氣集合
+ * 1. 建立有向圖：節點 = 所有埠；邊 = 管線（雙向）∪ 各元件目前的內部通路（可單向、可節流、可限壓）
+ * 2. 從所有氣源埠往前走 → 有壓（供氣能力 > 0）
+ * 3. 在反向圖上從所有排氣埠走 → 能排氣（排氣能力 > 0）
  * 4. 有壓優先（氣源直接對著排氣口吹，仍視為有壓）
  *
- * 管線是圖上的一條邊，兩端必在同一個連通分量，因此管線狀態 = 端點狀態。
+ * 供氣／排氣能力取沿途最窄處（節流開度），壓力取沿途調壓閥的最低設定，
+ * 都以最寬路徑計算（多條並聯路徑取最好的一條）。
+ *
+ * 管線是雙向全開的邊，兩端必定得到相同結果，因此管線狀態 = 端點狀態。
  * 端點找不到的管線（例如元件剛被刪除）會被忽略並視為封閉。
  */
 export function solve(
@@ -39,36 +31,61 @@ export function solve(
   componentStates: ComponentStates,
   reg: ComponentRegistry = defaultRegistry,
 ): SolveResult {
-  const adjacency = new Map<PortKey, PortKey[]>()
-  const sources: PortKey[] = []
-  const vents: PortKey[] = []
+  const forward = new Map<PortKey, FlowEdge[]>()
+  const backward = new Map<PortKey, FlowEdge[]>()
+  const sources = new Map<PortKey, number>()
+  const vents = new Map<PortKey, number>()
 
-  const link = (a: PortKey, b: PortKey) => {
-    adjacency.get(a)!.push(b)
-    adjacency.get(b)!.push(a)
+  const addEdge = (from: PortKey, to: PortKey, capacity: number, maxPressure: number) => {
+    if (!(capacity > 0)) return
+    forward.get(from)!.push({ to, capacity, maxPressure })
+    backward.get(to)!.push({ to: from, capacity, maxPressure })
   }
 
   for (const node of circuit.nodes) {
     const def = reg.get(node.type)
-    const state = componentStates[node.id] ?? def.createState()
+    const params = resolveParams(def, node.params)
+    const state = componentStates[node.id] ?? def.createState(params)
     const key = (portId: string) => portKey(node.id, portId)
 
-    for (const port of def.ports) adjacency.set(key(port.id), [])
-    for (const [a, b] of def.getInternalPaths(state)) link(key(a), key(b))
-    for (const p of def.getSourcePorts?.(state) ?? []) sources.push(key(p))
-    for (const p of def.getExhaustPorts?.(state) ?? []) vents.push(key(p))
+    for (const port of def.ports) {
+      forward.set(key(port.id), [])
+      backward.set(key(port.id), [])
+    }
+    for (const raw of def.getInternalPaths(state, params)) {
+      const path = normalizePath(raw)
+      const capacity = Math.min(1, path.capacity ?? 1)
+      addEdge(key(path.from), key(path.to), capacity, path.maxPressure ?? Infinity)
+      if (!path.oneWay) addEdge(key(path.to), key(path.from), capacity, Infinity)
+    }
+    const pressure = def.sourcePressure?.(params) ?? DEFAULT_SUPPLY_PRESSURE
+    for (const p of def.getSourcePorts?.(state, params) ?? []) sources.set(key(p), pressure)
+    for (const p of def.getExhaustPorts?.(state, params) ?? []) vents.set(key(p), 1)
   }
 
   for (const tube of circuit.tubes) {
-    if (adjacency.has(tube.from) && adjacency.has(tube.to)) link(tube.from, tube.to)
+    if (forward.has(tube.from) && forward.has(tube.to)) {
+      addEdge(tube.from, tube.to, 1, Infinity)
+      addEdge(tube.to, tube.from, 1, Infinity)
+    }
   }
 
-  const pressurized = reachable(adjacency, sources)
-  const vented = reachable(adjacency, vents)
+  const unit = new Map([...sources.keys()].map((k) => [k, 1]))
+  const supply = widestPaths(forward, unit, (e) => e.capacity)
+  const vent = widestPaths(backward, vents, (e) => e.capacity)
+  const level = widestPaths(forward, sources, (e) => e.maxPressure)
 
   const portStates: Record<PortKey, PortState> = {}
-  for (const key of adjacency.keys()) {
-    portStates[key] = pressurized.has(key) ? 'pressure' : vented.has(key) ? 'exhaust' : 'blocked'
+  const supplyFlow: Record<PortKey, number> = {}
+  const ventFlow: Record<PortKey, number> = {}
+  const pressure: Record<PortKey, number> = {}
+  for (const key of forward.keys()) {
+    const s = supply.get(key) ?? 0
+    const v = vent.get(key) ?? 0
+    portStates[key] = s > 0 ? 'pressure' : v > 0 ? 'exhaust' : 'blocked'
+    supplyFlow[key] = s
+    ventFlow[key] = v
+    pressure[key] = s > 0 ? (level.get(key) ?? 0) : 0
   }
 
   const tubeStates: Record<string, PortState> = {}
@@ -76,5 +93,5 @@ export function solve(
     tubeStates[tube.id] = portStates[tube.from] ?? 'blocked'
   }
 
-  return { portStates, tubeStates }
+  return { portStates, tubeStates, supplyFlow, ventFlow, pressure }
 }
