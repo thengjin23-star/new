@@ -57,3 +57,43 @@ export const WarningIcon = () => (
     <path d="M12 3 2 21h20zM12 10v5M12 18h.01" />
   </Icon>
 )
+export const UndoIcon = () => (
+  <Icon>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Icon>
+)
+export const RedoIcon = () => (
+  <Icon>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+  </Icon>
+)
+export const FlipIcon = () => (
+  <Icon>
+    <path d="M12 3v18" strokeDasharray="2 3" />
+    <path d="M8 7 3 12l5 5V7zM16 7l5 5-5 5V7z" />
+  </Icon>
+)
+export const FileIcon = () => (
+  <Icon>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5" />
+  </Icon>
+)
+export const PanelIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M15 4v16" />
+  </Icon>
+)
+export const ChevronDownIcon = () => (
+  <Icon width={14} height={14}>
+    <path d="m6 9 6 6 6-6" />
+  </Icon>
+)
+export const NoteIcon = () => (
+  <Icon>
+    <path d="M4 5h16M4 10h16M4 15h10" />
+  </Icon>
+)

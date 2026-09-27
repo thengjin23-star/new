@@ -1,4 +1,5 @@
 import { CATEGORY_LABEL, type Product } from '../catalog/types'
+import { toCsv } from '../utils/csv'
 import type { ProductMap } from './moduleOps'
 import type { ModuleDoc } from './types'
 
@@ -21,21 +22,13 @@ export function buildBom(doc: ModuleDoc, products: ProductMap): BomRow[] {
   return [...rows.values()]
 }
 
-const csvCell = (v: string | number) => {
-  const s = String(v)
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
 /** CSV（開頭加 UTF-8 BOM，Excel 開啟時中文才不會變亂碼） */
 export function bomToCsv(doc: ModuleDoc, rows: readonly BomRow[]): string {
-  const lines = [
-    [`模組：${doc.name}`].map(csvCell).join(','),
-    ...(doc.customer ? [[`客戶：${doc.customer}`].map(csvCell).join(',')] : []),
-    '',
-    ['項次', '型號', '名稱', '類別', '數量'].join(','),
-    ...rows.map((r) =>
-      [r.index, r.product.modelCode, r.product.name, CATEGORY_LABEL[r.product.category], r.quantity].map(csvCell).join(','),
-    ),
-  ]
-  return '﻿' + lines.join('\r\n') + '\r\n'
+  return toCsv([
+    [`模組：${doc.name}`],
+    ...(doc.customer ? [[`客戶：${doc.customer}`]] : []),
+    [],
+    ['項次', '型號', '名稱', '類別', '數量'],
+    ...rows.map((r) => [r.index, r.product.modelCode, r.product.name, CATEGORY_LABEL[r.product.category], r.quantity]),
+  ])
 }

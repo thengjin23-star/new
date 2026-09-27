@@ -9,7 +9,7 @@ const CX = WIDTH / 2
 const CY = 38
 const R = 18
 
-function AirSupply({ ports, rotation }: SymbolProps) {
+function AirSupply({ ports, rotation, flip, labels }: SymbolProps) {
   return (
     <g>
       <Stub x1={CX} y1={0} x2={CX} y2={CY - R} state={ports?.P} />
@@ -21,7 +21,9 @@ function AirSupply({ ports, rotation }: SymbolProps) {
         strokeWidth={2}
         strokeLinejoin="round"
       />
-      <PortLabel x={CX + 9} y={7} rotation={rotation}>P</PortLabel>
+      <PortLabel x={CX + 9} y={7} rotation={rotation} flip={flip}>
+        {labels?.P ?? 'P'}
+      </PortLabel>
     </g>
   )
 }

@@ -1,3 +1,5 @@
+import type { InteractAction } from './definition'
+import { resolveParams } from './params'
 import { registry as defaultRegistry, type ComponentRegistry } from './registry'
 import { solve } from './solve'
 import { portKey, type Circuit, type PortState, type SimState } from './types'
@@ -5,8 +7,11 @@ import { portKey, type Circuit, type PortState, type SimState } from './types'
 /** 建立模擬起始狀態：每個元件回到初始狀態，尚未計算壓力 */
 export function createInitialState(circuit: Circuit, reg: ComponentRegistry = defaultRegistry): SimState {
   const componentStates: Record<string, unknown> = {}
-  for (const node of circuit.nodes) componentStates[node.id] = reg.get(node.type).createState()
-  return { time: 0, componentStates, portStates: {}, tubeStates: {} }
+  for (const node of circuit.nodes) {
+    const def = reg.get(node.type)
+    componentStates[node.id] = def.createState(resolveParams(def, node.params))
+  }
+  return { time: 0, componentStates, portStates: {}, tubeStates: {}, supplyFlow: {}, ventFlow: {}, pressure: {} }
 }
 
 /**
@@ -31,24 +36,32 @@ export function step(
   const componentStates: Record<string, unknown> = {}
   for (const node of circuit.nodes) {
     const def = reg.get(node.type)
-    const current = state.componentStates[node.id] ?? def.createState()
+    const params = resolveParams(def, node.params)
+    const current = state.componentStates[node.id] ?? def.createState(params)
     if (!def.update) {
       componentStates[node.id] = current
       continue
     }
     const ports: Record<string, PortState> = {}
+    const supplyFlow: Record<string, number> = {}
+    const ventFlow: Record<string, number> = {}
+    const pressure: Record<string, number> = {}
     for (const port of def.ports) {
-      ports[port.id] = before.portStates[portKey(node.id, port.id)] ?? 'blocked'
+      const key = portKey(node.id, port.id)
+      ports[port.id] = before.portStates[key] ?? 'blocked'
+      supplyFlow[port.id] = before.supplyFlow[key] ?? 0
+      ventFlow[port.id] = before.ventFlow[key] ?? 0
+      pressure[port.id] = before.pressure[key] ?? 0
     }
-    componentStates[node.id] = def.update({ state: current, dt: seconds, ports })
+    componentStates[node.id] = def.update({ state: current, dt: seconds, ports, supplyFlow, ventFlow, pressure, params })
   }
 
   return { time: state.time + seconds, componentStates, ...solve(circuit, componentStates, reg) }
 }
 
 /**
- * 使用者點擊某個元件（例如切換手動閥）。
- * 回傳新的模擬狀態並立即重算壓力，暫停中點擊也能馬上看到管線顏色變化。
+ * 使用者操作某個元件（點擊閥門、點擊線圈、按住按鈕…）。
+ * 回傳新的模擬狀態並立即重算壓力，暫停中操作也能馬上看到管線顏色變化。
  * 元件不可互動或不存在時，原封不動回傳 state。
  */
 export function interact(
@@ -56,14 +69,18 @@ export function interact(
   state: SimState,
   nodeId: string,
   reg: ComponentRegistry = defaultRegistry,
+  action: InteractAction = 'toggle',
 ): SimState {
   const node = circuit.nodes.find((n) => n.id === nodeId)
   if (!node) return state
   const def = reg.get(node.type)
   if (!def.onInteract) return state
 
-  const current = state.componentStates[nodeId] ?? def.createState()
-  const componentStates = { ...state.componentStates, [nodeId]: def.onInteract(current) }
+  const params = resolveParams(def, node.params)
+  const current = state.componentStates[nodeId] ?? def.createState(params)
+  const next = def.onInteract(current, action, params)
+  if (next === current) return state
+  const componentStates = { ...state.componentStates, [nodeId]: next }
   return { ...state, componentStates, ...solve(circuit, componentStates, reg) }
 }
 

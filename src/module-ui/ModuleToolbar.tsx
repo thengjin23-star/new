@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { WorkspaceTabs } from '../components/WorkspaceTabs'
 import { useModuleStore } from './moduleStore'
-import { BarButton, Button, Dialog } from './ui'
+import { BarButton, Button, Dialog } from '../components/ui'
 
 export function ModuleToolbar() {
   const doc = useModuleStore((s) => s.doc)

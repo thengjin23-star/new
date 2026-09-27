@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import type { PortState } from '../../engine'
+import type { Params, PortState } from '../../engine'
 import type { Rotation } from '../../store/flow'
 
 export type Side = 'top' | 'right' | 'bottom' | 'left'
@@ -16,8 +16,16 @@ export interface SymbolProps {
   state: unknown
   /** 各埠壓力狀態；編輯模式下為 undefined，符號以一般線條色繪製 */
   ports?: Readonly<Record<string, PortState>>
-  /** 節點旋轉角度，用來讓埠代號文字保持正立 */
+  /** 節點旋轉角度，用來讓文字保持正立 */
   rotation: Rotation
+  /** 節點是否水平鏡射，用來讓文字保持正讀 */
+  flip?: boolean
+  /** 埠代號的顯示文字（例如 ISO 數字埠號）；未提供的埠顯示埠代號 */
+  labels?: Readonly<Record<string, string>>
+  /** 各埠壓力（MPa），模擬中才有；壓力錶顯示用 */
+  pressure?: Readonly<Record<string, number>>
+  /** 已套用預設值的元件參數（例如調壓閥的設定壓力） */
+  params?: Params
 }
 
 /**
@@ -36,4 +44,10 @@ const SIDES: readonly Side[] = ['top', 'right', 'bottom', 'left']
 
 export function rotateSide(side: Side, rotation: Rotation): Side {
   return SIDES[(SIDES.indexOf(side) + rotation / 90) % 4]
+}
+
+/** 水平鏡射後的出線方向 */
+export function flipSide(side: Side, flip: boolean | undefined): Side {
+  if (!flip) return side
+  return side === 'left' ? 'right' : side === 'right' ? 'left' : side
 }

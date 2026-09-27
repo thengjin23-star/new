@@ -8,9 +8,10 @@ import type { ModuleDoc, PortRef } from '../assembly/types'
 import { exportLibraryArchive, exportModuleArchive, importArchive, LIBRARY_EXT, MODULE_EXT } from '../catalog/archive'
 import { detectCadFormat } from '../catalog/cad'
 import { parseCadInWorker } from '../catalog/cadClient'
-import { CatalogStore } from '../catalog/db'
+import type { CatalogStore } from '../catalog/db'
 import { analyzeFace, proposePort, type OpenTester, type PortProposal } from '../catalog/faceAnalysis'
 import { importCadFile } from '../catalog/importer'
+import { getCatalog, useLibraryStore } from '../catalog/library'
 import { createOpenTester } from '../catalog/openTester'
 import { makeFrame } from '../catalog/ports'
 import { installSamples, type SampleManifest } from '../catalog/samples'
@@ -18,7 +19,7 @@ import { faceOfTriangle, type Tessellation } from '../catalog/tessellation'
 import { productLabel, type Product, type ProductPort } from '../catalog/types'
 import { add, scale, type Vec3 } from '../geometry/vec3'
 import { checkMate, type PortSpec } from '../threads'
-import { downloadFile, safeFileName } from './download'
+import { downloadFile, safeFileName } from '../utils/download'
 
 export type Mode = 'select' | 'define-port'
 
@@ -167,11 +168,8 @@ export const useModuleStore = create<State>()((set, get) => {
   const fail = (err: unknown) =>
     set({ busy: undefined, message: { kind: 'error', text: err instanceof Error ? err.message : String(err) } })
 
-  const refreshProducts = async () => {
-    if (!catalog) return
-    const list = await catalog.listProducts()
-    set({ products: Object.fromEntries(list.map((p) => [p.id, p])) })
-  }
+  /** 直接寫入資料庫之後（匯入檔案、安裝範例），重新讀取共用產品庫並通知其他分頁 */
+  const refreshProducts = () => useLibraryStore.getState().reload(true)
 
   /** 確保產品的網格已載入（快取 → 資料庫 → 重新解析原始檔） */
   const ensureMesh = async (product: Product): Promise<Tessellation | undefined> => {
@@ -236,10 +234,7 @@ export const useModuleStore = create<State>()((set, get) => {
   }
 
   const persistProduct = async (product: Product) => {
-    if (!catalog) return
-    const next = { ...product, updatedAt: Date.now() }
-    await catalog.putProduct(next)
-    set((s) => ({ products: { ...s.products, [next.id]: next } }))
+    await useLibraryStore.getState().saveProduct(product)
   }
 
   const openDoc = async (doc: ModuleDoc) => {
@@ -253,9 +248,13 @@ export const useModuleStore = create<State>()((set, get) => {
 
   const initialize = async () => {
     try {
-      catalog = await CatalogStore.open()
-      void navigator.storage?.persist?.()
-      await refreshProducts()
+      catalog = await getCatalog()
+      // 產品庫由兩個分頁共用：這裡的 products 是共用 store 的鏡像（同步更新）
+      await useLibraryStore.getState().load()
+      set({ products: useLibraryStore.getState().products })
+      useLibraryStore.subscribe((lib) => {
+        if (lib.products !== get().products) set({ products: lib.products })
+      })
       const modules = (await catalog.listModules()).map(summarize).sort((a, b) => b.updatedAt - a.updatedAt)
       set({ modules })
       let lastId: string | null = null
@@ -375,8 +374,7 @@ export const useModuleStore = create<State>()((set, get) => {
         set({ message: { kind: 'error', text: `無法刪除：以下模組仍在使用這個產品：${names.join('、')}` } })
         return
       }
-      await catalog.deleteProduct(productId)
-      await refreshProducts()
+      await useLibraryStore.getState().removeProduct(productId)
     },
 
     async updateProduct(product) {

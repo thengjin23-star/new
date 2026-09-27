@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { builtinComponents } from '../components'
-import { defineComponent, type ComponentDefinition } from '../definition'
+import { defineComponent, normalizePath, type ComponentDefinition } from '../definition'
 import { createRegistry, registry } from '../registry'
 import { solve } from '../solve'
 import { createInitialState, interact, step } from '../step'
@@ -21,9 +21,10 @@ describe('內建元件定義', () => {
     expect(def.label).not.toBe('')
 
     for (const state of reachableStates(def)) {
-      for (const [a, b] of def.getInternalPaths(state)) {
-        expect(ids).toContain(a)
-        expect(ids).toContain(b)
+      for (const path of def.getInternalPaths(state)) {
+        const { from, to } = normalizePath(path)
+        expect(ids).toContain(from)
+        expect(ids).toContain(to)
       }
       for (const p of def.getSourcePorts?.(state) ?? []) expect(ids).toContain(p)
       for (const p of def.getExhaustPorts?.(state) ?? []) expect(ids).toContain(p)
@@ -31,7 +32,32 @@ describe('內建元件定義', () => {
   })
 
   it('type 不重複，且預設註冊表依序包含全部內建元件', () => {
-    expect(registry.list().map((d) => d.type)).toEqual(['airSupply', 'valve52Manual', 'cylinderDouble', 'exhaust'])
+    expect(registry.list().map((d) => d.type)).toEqual([
+      'airSupply',
+      'filter',
+      'regulator',
+      'lubricator',
+      'frl',
+      'pressureGauge',
+      'valve52Manual',
+      'valve52Single',
+      'valve52Double',
+      'valve53Closed',
+      'valve53Exhaust',
+      'valve53Pressure',
+      'valve32NC',
+      'valve32NO',
+      'valve32Button',
+      'valve22NC',
+      'checkValve',
+      'flowControl',
+      'throttle',
+      'cylinderDouble',
+      'cylinderSingle',
+      'exhaust',
+      'silencer',
+      'plug',
+    ])
   })
 })
 
@@ -48,7 +74,7 @@ describe('createRegistry', () => {
 
 /**
  * 擴充性示範：只新增元件定義、不改引擎，就能模擬新的元件。
- * 這裡用第二階段會加入的 3/2 常閉手動閥 + 單動彈簧回位氣缸當例子。
+ * 這裡用註冊表以外的 3/2 手動閥 + 單動氣缸當例子。
  */
 describe('擴充性：以註冊表加入新元件', () => {
   const valve32 = defineComponent<{ open: boolean }>({
@@ -66,8 +92,8 @@ describe('擴充性：以註冊表加入新元件', () => {
   })
 
   const cylinderSingle = defineComponent<{ piston: number }>({
-    type: 'cylinderSingle',
-    label: '單動氣缸',
+    type: 'cylinderSpring',
+    label: '單動氣缸（示範）',
     category: 'actuator',
     ports: [{ id: 'A', role: 'working' }],
     createState: () => ({ piston: 0 }),
@@ -83,7 +109,7 @@ describe('擴充性：以註冊表加入新元件', () => {
     nodes: [
       { id: 's', type: 'airSupply' },
       { id: 'v', type: 'valve32Manual' },
-      { id: 'c', type: 'cylinderSingle' },
+      { id: 'c', type: 'cylinderSpring' },
       { id: 'r', type: 'exhaust' },
     ],
     tubes: [

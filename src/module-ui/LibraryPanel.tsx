@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { CATEGORY_LABEL } from '../catalog/types'
 import { useModuleStore } from './moduleStore'
-import { Button } from './ui'
+import { Button } from '../components/ui'
 
 export const ACCEPT_FILES = '.step,.stp,.iges,.igs,.plib,.pmod'
 

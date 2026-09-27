@@ -3,8 +3,8 @@ import { getPort } from '../assembly/moduleOps'
 import { adapterNeed, checkMate, formatSpec, type PortSpec } from '../threads'
 import { portLabel } from './labels'
 import { useModuleStore } from './moduleStore'
-import { LEVEL_STYLE } from './levels'
-import { Button, Dialog } from './ui'
+import { LEVEL_STYLE } from '../components/levels'
+import { Button, Dialog } from '../components/ui'
 
 /** 兩個埠都選好後：顯示搭配檢查結果、原因與可用的轉接頭 */
 export function MateDialog() {

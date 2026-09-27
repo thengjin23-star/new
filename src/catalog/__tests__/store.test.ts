@@ -75,6 +75,16 @@ describe('範例零件庫', () => {
     expect(manifold.ports.find((p) => p.name === '站1')?.rotation).toBe('fixed')
   })
 
+  it('範例零件帶有氣動功能，埠以 id 對應', async () => {
+    const store = await withSamples()
+    const sc = await byModel(store, 'DEMO-SC-M5-D4')
+    const id = (name: string) => sc.ports.find((p) => p.name === name)!.id
+    expect(sc.pneumatic).toEqual({ type: 'flowControl', portMap: { '2': id('1'), '1': id('2') } })
+    const cyl = await byModel(store, 'DEMO-CYL-16-50')
+    expect(cyl.pneumatic).toMatchObject({ type: 'cylinderDouble', params: { bore: 16, stroke: 50 } })
+    expect(Object.keys(cyl.pneumatic!.portMap).sort()).toEqual(['A', 'B'])
+  })
+
   it('再次安裝不會覆蓋使用者修改過的埠', async () => {
     const store = await withSamples()
     const silencer = await byModel(store, 'DEMO-SILENCER-R18')
@@ -167,5 +177,29 @@ describe('產品庫與模組的匯出／匯入', () => {
   it('不是匯出檔時丟出中文錯誤', async () => {
     const b = await open()
     await expect(importArchive(b, new Uint8Array([1, 2, 3]))).rejects.toThrow('檔案格式錯誤')
+  })
+})
+
+describe('資料庫升級', () => {
+  it('v1 的資料庫升級到 v2 後，既有產品仍在，且可以存迴路圖', async () => {
+    const { openDB } = await import('idb')
+    const name = uniqueDbName()
+    const v1 = await openDB(name, 1, {
+      upgrade(db) {
+        const products = db.createObjectStore('products', { keyPath: 'id' })
+        products.createIndex('by-sha', 'source.sha256', { unique: true })
+        db.createObjectStore('files', { keyPath: 'sha256' })
+        db.createObjectStore('meshes', { keyPath: 'sha256' })
+        db.createObjectStore('modules', { keyPath: 'id' })
+      },
+    })
+    await v1.put('products', { id: 'old', modelCode: 'OLD-1', source: { sha256: 'x' } })
+    v1.close()
+
+    const store = await CatalogStore.open(name)
+    expect((await store.listProducts()).map((p) => p.modelCode)).toEqual(['OLD-1'])
+    await store.putCircuit({ id: 'c1', name: '迴路', createdAt: 1, updatedAt: 1, nodes: [], edges: [] })
+    expect((await store.listCircuits()).map((c) => c.name)).toEqual(['迴路'])
+    store.close()
   })
 })

@@ -12,37 +12,49 @@ import {
   type EdgeTypes,
   type NodeTypes,
 } from '@xyflow/react'
-import { useCallback, useEffect, type DragEvent } from 'react'
+import { useCallback, useEffect, type DragEvent, type MouseEvent } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import { useLibraryStore } from '../catalog/library'
+import { effectivePneumatic } from '../catalog/pneumatic'
 import { registry } from '../engine'
 import { useCircuitStore } from '../store/circuitStore'
-import { isValidTube, type PneumaticFlowNode, type TubeFlowEdge } from '../store/flow'
-import { COMPONENT_DRAG_MIME, FIT_VIEW_OPTIONS } from './canvasConfig'
+import { isPneumaticNode, isValidTube, type CircuitFlowNode, type TubeFlowEdge } from '../store/flow'
+import { COMPONENT_DRAG_MIME, FIT_VIEW_OPTIONS, parseDragPayload } from './canvasConfig'
 import { TubeEdge } from './edges/TubeEdge'
 import { WarningIcon } from './icons'
 import { Legend } from './Legend'
+import { NoteNode } from './nodes/NoteNode'
 import { PneumaticNode } from './nodes/PneumaticNode'
 import { getSymbol } from './symbols/symbolRegistry'
 
-const nodeTypes: NodeTypes = { pneumatic: PneumaticNode }
+const nodeTypes: NodeTypes = { pneumatic: PneumaticNode, note: NoteNode }
 const edgeTypes: EdgeTypes = { tube: TubeEdge }
 const DELETE_KEYS = ['Delete', 'Backspace']
 
+/** 點擊位置對應的操作：符號內標了 data-action 的部位（例如電磁線圈），否則為點擊本體 */
+function actionAt(e: MouseEvent): string | undefined {
+  const target = e.target as Element | null
+  if (target?.closest('[data-momentary]')) return undefined
+  return target?.closest('[data-action]')?.getAttribute('data-action') ?? 'toggle'
+}
+
 export function CircuitCanvas() {
-  const { nodes, edges, status, onNodesChange, onEdgesChange, onConnect, addComponent, interact } = useCircuitStore(
-    useShallow((s) => ({
-      nodes: s.nodes,
-      edges: s.edges,
-      status: s.status,
-      onNodesChange: s.onNodesChange,
-      onEdgesChange: s.onEdgesChange,
-      onConnect: s.onConnect,
-      addComponent: s.addComponent,
-      interact: s.interact,
-    })),
-  )
+  const { nodes, edges, status, onNodesChange, onEdgesChange, onConnect, addComponent, interact, beginDrag } =
+    useCircuitStore(
+      useShallow((s) => ({
+        nodes: s.nodes,
+        edges: s.edges,
+        status: s.status,
+        onNodesChange: s.onNodesChange,
+        onEdgesChange: s.onEdgesChange,
+        onConnect: s.onConnect,
+        addComponent: s.addComponent,
+        interact: s.interact,
+        beginDrag: s.beginDrag,
+      })),
+    )
   const warningCount = useCircuitStore((s) => s.unconnectedExhausts.length)
-  const { screenToFlowPosition, fitView } = useReactFlow<PneumaticFlowNode, TubeFlowEdge>()
+  const { screenToFlowPosition, fitView } = useReactFlow<CircuitFlowNode, TubeFlowEdge>()
   const editing = status === 'idle'
 
   // 開啟時若有存檔的電路就縮放到全貌。不使用 <ReactFlow fitView>：畫布為空時
@@ -64,18 +76,36 @@ export function CircuitCanvas() {
 
   const onDrop = useCallback(
     (e: DragEvent) => {
-      const type = e.dataTransfer.getData(COMPONENT_DRAG_MIME)
-      if (!type || !registry.has(type)) return
+      const payload = parseDragPayload(e.dataTransfer.getData(COMPONENT_DRAG_MIME))
+      if (!payload || !registry.has(payload.type)) return
       e.preventDefault()
-      const { width, height } = getSymbol(type)
+      const { width, height } = getSymbol(payload.type)
       const p = screenToFlowPosition({ x: e.clientX, y: e.clientY })
-      addComponent(type, { x: p.x - width / 2, y: p.y - height / 2 })
+      const product = payload.productId ? useLibraryStore.getState().products[payload.productId] : undefined
+      addComponent(
+        payload.type,
+        { x: p.x - width / 2, y: p.y - height / 2 },
+        product && {
+          product: { id: product.id, modelCode: product.modelCode, name: product.name },
+          params: effectivePneumatic(product)?.params,
+        },
+      )
     },
     [addComponent, screenToFlowPosition],
   )
 
+  const onNodeClick = useCallback(
+    (e: MouseEvent, node: CircuitFlowNode) => {
+      const action = actionAt(e)
+      if (action && isPneumaticNode(node)) interact(node.id, action)
+    },
+    [interact],
+  )
+
+  const hasInteractive = nodes.some((n) => isPneumaticNode(n) && registry.get(n.data.componentType).onInteract)
+
   return (
-    <ReactFlow<PneumaticFlowNode, TubeFlowEdge>
+    <ReactFlow<CircuitFlowNode, TubeFlowEdge>
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
@@ -83,6 +113,7 @@ export function CircuitCanvas() {
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
+      onNodeDragStart={beginDrag}
       isValidConnection={isValidConnection}
       connectionMode={ConnectionMode.Loose}
       connectionLineType={ConnectionLineType.SmoothStep}
@@ -91,12 +122,12 @@ export function CircuitCanvas() {
       nodesConnectable={editing}
       elementsSelectable={editing}
       deleteKeyCode={editing ? DELETE_KEYS : null}
-      onNodeClick={editing ? undefined : (_, node) => interact(node.id)}
+      onNodeClick={editing ? undefined : onNodeClick}
       onDragOver={onDragOver}
       onDrop={onDrop}
       snapToGrid
       snapGrid={[8, 8]}
-      minZoom={0.25}
+      minZoom={0.2}
       maxZoom={2.5}
     >
       <Background variant={BackgroundVariant.Dots} gap={16} size={1.2} color="#cbd5e1" />
@@ -107,7 +138,7 @@ export function CircuitCanvas() {
 
       {!editing && warningCount > 0 && (
         <Panel position="top-center">
-          <div className="flex max-w-md items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 shadow-sm">
+          <div className="mt-10 flex max-w-md items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 shadow-sm lg:mt-0">
             <WarningIcon />
             <span>
               有 {warningCount} 個排氣埠未連接排氣口（琥珀色標記處）。未接的排氣埠視為封閉，氣缸可能無法動作。
@@ -115,9 +146,11 @@ export function CircuitCanvas() {
           </div>
         </Panel>
       )}
-      {!editing && warningCount === 0 && nodes.some((n) => registry.get(n.data.componentType).onInteract) && (
+      {!editing && warningCount === 0 && hasInteractive && (
         <Panel position="top-center">
-          <div className="rounded-md bg-slate-800/85 px-3 py-1.5 text-sm text-white shadow-sm">點擊閥門可切換閥位</div>
+          <div className="mt-10 rounded-md bg-slate-800/85 px-3 py-1.5 text-sm text-white shadow-sm lg:mt-0">
+            點擊閥門或電磁線圈切換；按鈕閥要按住
+          </div>
         </Panel>
       )}
 
@@ -125,7 +158,9 @@ export function CircuitCanvas() {
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
           <div className="max-w-sm rounded-lg border border-dashed border-slate-300 bg-white/80 px-6 py-5 text-center text-slate-500">
             <p className="font-medium text-slate-700">畫布是空的</p>
-            <p className="mt-1 text-sm">從元件面板拖拉（或點一下）元件到這裡，或按上方「載入範例」。</p>
+            <p className="mt-1 text-sm">
+              從左側「元件」或「產品庫」拖拉（或點一下）加入，或從上方「範例」開啟一個範例迴路。
+            </p>
           </div>
         </div>
       )}

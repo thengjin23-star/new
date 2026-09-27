@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { CylinderState } from '../components/cylinderDouble'
-import type { Valve52State } from '../components/valve52Manual'
+import type { CylinderState, Valve52State } from '../components'
 import { CYLINDER_STROKE_SECONDS } from '../constants'
 import { createInitialState, interact, isInteractive, step } from '../step'
 import type { Circuit, SimState } from '../types'

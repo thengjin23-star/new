@@ -1,9 +1,11 @@
 import type { Vec3 } from '../geometry/vec3'
 import { parseSpec, type InterfaceSpec } from '../threads'
+import type { ParamValue } from '../engine/types'
 import type { CatalogStore } from './db'
 import { importCadFile, type CadParser } from './importer'
+import { matchPortsByName } from './pneumatic'
 import { makePort } from './ports'
-import type { ProductCategory, ProductPort } from './types'
+import type { ProductCategory, ProductPneumatic, ProductPort } from './types'
 
 /** public/samples/manifest.json 的格式（由 scripts/make-sample-parts.mjs 產生） */
 export interface SamplePortDef {
@@ -16,12 +18,20 @@ export interface SamplePortDef {
   axis: Vec3
 }
 
+/** 範例零件的氣動功能；ports 以埠名稱對應（未提供時依名稱自動配對） */
+export interface SamplePneumaticDef {
+  type: string
+  ports?: Record<string, string>
+  params?: Record<string, ParamValue>
+}
+
 export interface SamplePartDef {
   file: string
   modelCode: string
   name: string
   category: ProductCategory
   ports: SamplePortDef[]
+  pneumatic?: SamplePneumaticDef
 }
 
 export interface SampleManifest {
@@ -35,6 +45,19 @@ export function portsFromDefs(defs: readonly SamplePortDef[]): ProductPort[] {
     if (!parsed.ok) throw new Error(`範例埠「${d.name}」的規格錯誤：${parsed.error}`)
     return makePort({ name: d.name, spec: parsed.spec, origin: d.origin, axis: d.axis, detected: { shape: d.shape } })
   })
+}
+
+/** 把範例的氣動功能（以埠名稱對應）轉成產品資料（以埠 id 對應） */
+export function pneumaticFromDef(def: SamplePneumaticDef, ports: readonly ProductPort[]): ProductPneumatic {
+  const portMap = def.ports
+    ? Object.fromEntries(
+        Object.entries(def.ports).flatMap(([fn, name]) => {
+          const port = ports.find((p) => p.name === name)
+          return port ? [[fn, port.id]] : []
+        }),
+      )
+    : matchPortsByName(def.type, ports)
+  return def.params ? { type: def.type, portMap, params: { ...def.params } } : { type: def.type, portMap }
 }
 
 /**
@@ -55,12 +78,14 @@ export async function installSamples(
       existing++
       continue
     }
+    const ports = portsFromDefs(def.ports)
     await store.putProduct({
       ...product,
       modelCode: def.modelCode,
       name: def.name,
       category: def.category,
-      ports: portsFromDefs(def.ports),
+      ports,
+      ...(def.pneumatic && { pneumatic: pneumaticFromDef(def.pneumatic, ports) }),
       updatedAt: Date.now(),
     })
     if (status === 'new') added++

@@ -1,3 +1,4 @@
+import type { ParamValue } from '../engine/types'
 import type { Vec3 } from '../geometry/vec3'
 import type { PortSpec } from '../threads'
 
@@ -62,6 +63,20 @@ export interface ProductSource {
   bytes: number
 }
 
+/**
+ * 產品的氣動功能：它在迴路圖中是哪一種元件、怎麼模擬。
+ * - type：引擎元件 type（例如 'valve52Single'），或特殊值：
+ *   'fitting'（接頭、轉接頭：氣流直接通過，迴路圖以管線表示）、
+ *   'manifold'（集裝座：迴路圖中不單獨畫出）
+ * - portMap：功能埠 → 產品埠 id（3D 模擬與「由模組產生迴路圖」用；可只對應一部分）
+ * - params：元件參數（例如缸徑、行程）
+ */
+export interface ProductPneumatic {
+  type: string
+  portMap: Record<string, string>
+  params?: Record<string, ParamValue>
+}
+
 export interface Product {
   id: string
   /** 型號（預設取檔名） */
@@ -71,6 +86,8 @@ export interface Product {
   category: ProductCategory
   source: ProductSource
   ports: ProductPort[]
+  /** 氣動功能；沒有設定時由分類與埠名自動判斷（見 catalog/pneumatic.ts） */
+  pneumatic?: ProductPneumatic
   notes?: string
   createdAt: number
   updatedAt: number
