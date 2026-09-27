@@ -38,6 +38,8 @@ export interface LibraryState {
   status: 'idle' | 'loading' | 'ready' | 'error'
   error?: string
   products: Record<string, Product>
+  /** 產品縮圖：原始檔 sha256 → 圖片網址（object URL） */
+  thumbs: Record<string, string>
 
   /** 第一次載入（重複呼叫只執行一次） */
   load(): Promise<void>
@@ -47,13 +49,18 @@ export interface LibraryState {
   saveProduct(product: Product): Promise<Product>
   /** 刪除產品及其原始檔與網格 */
   removeProduct(id: string): Promise<void>
+  /** 儲存縮圖（PNG）並更新畫面 */
+  saveThumb(sha256: string, png: Uint8Array): Promise<void>
 }
+
+const thumbUrl = (png: Uint8Array) => URL.createObjectURL(new Blob([new Uint8Array(png)], { type: 'image/png' }))
 
 let loadPromise: Promise<void> | undefined
 
 export const useLibraryStore = create<LibraryState>()((set, get) => ({
   status: 'idle',
   products: {},
+  thumbs: {},
 
   load() {
     loadPromise ??= (async () => {
@@ -77,8 +84,13 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
 
   async reload(notify = false) {
     const catalog = await getCatalog()
-    const list = await catalog.listProducts()
-    set({ products: Object.fromEntries(list.map((p) => [p.id, p])) })
+    const [list, thumbs] = await Promise.all([catalog.listProducts(), catalog.listThumbs()])
+    // 縮圖：只為新出現的建立網址，已有的沿用（避免圖片閃爍）
+    const current = get().thumbs
+    const next: Record<string, string> = {}
+    for (const t of thumbs) next[t.sha256] = current[t.sha256] ?? thumbUrl(t.png)
+    for (const [sha, url] of Object.entries(current)) if (!next[sha]) URL.revokeObjectURL(url)
+    set({ products: Object.fromEntries(list.map((p) => [p.id, p])), thumbs: next })
     if (notify) broadcast()
   },
 
@@ -89,6 +101,15 @@ export const useLibraryStore = create<LibraryState>()((set, get) => ({
     set((s) => ({ products: { ...s.products, [next.id]: next } }))
     broadcast()
     return next
+  },
+
+  async saveThumb(sha256, png) {
+    const catalog = await getCatalog()
+    await catalog.putThumb({ sha256, png })
+    const old = get().thumbs[sha256]
+    if (old) URL.revokeObjectURL(old)
+    set((s) => ({ thumbs: { ...s.thumbs, [sha256]: thumbUrl(png) } }))
+    broadcast()
   },
 
   async removeProduct(id) {
@@ -109,5 +130,5 @@ export function resetLibraryForTests(): void {
   loadPromise = undefined
   channel?.close()
   channel = undefined
-  useLibraryStore.setState({ status: 'idle', error: undefined, products: {} })
+  useLibraryStore.setState({ status: 'idle', error: undefined, products: {}, thumbs: {} })
 }

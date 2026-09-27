@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { WorkspaceTabs } from '../components/WorkspaceTabs'
+import { useSettingsStore } from '../settings/settings'
 import { useModuleStore } from './moduleStore'
 import { BarButton, Button, Dialog } from '../components/ui'
 
@@ -11,7 +12,8 @@ export function ModuleToolbar() {
   const canRedo = useModuleStore((s) => s.future.length > 0)
   const selected = useModuleStore((s) => s.selected)
   const drawer = useModuleStore((s) => s.drawer)
-  const { newModule, undo, redo, requestFit, exportModuleFile, renameModule, toggleDrawer } = useModuleStore.getState()
+  const mode = useModuleStore((s) => s.mode)
+  const { newModule, undo, redo, requestFit, exportModuleFile, renameModule, toggleDrawer, setMode } = useModuleStore.getState()
   const [listOpen, setListOpen] = useState(false)
 
   return (
@@ -30,11 +32,19 @@ export function ModuleToolbar() {
       <BarButton label="復原" onClick={undo} disabled={!canUndo} title="Ctrl+Z" />
       <BarButton label="重做" onClick={redo} disabled={!canRedo} title="Ctrl+Y" />
       <BarButton label="顯示全部" onClick={() => requestFit()} />
+      <BarButton
+        label={mode === 'measure' ? '結束量測' : '量測'}
+        aria-pressed={mode === 'measure'}
+        onClick={() => setMode(mode === 'measure' ? 'select' : 'measure')}
+        disabled={doc.instances.length === 0}
+        title="量測兩點距離"
+      />
       <BarButton label="對準選取" onClick={() => requestFit(selected)} disabled={!selected} title="縮放到選取的零件" />
       <BarButton label="匯出模組" onClick={() => void exportModuleFile()} disabled={doc.instances.length === 0} />
       <span className="ml-auto pl-2 text-xs whitespace-nowrap text-slate-300" role="status">
         {busy ?? (saved ? '已儲存' : '儲存中…')}
       </span>
+      <BarButton label="設定" onClick={() => useSettingsStore.getState().openDialog(true)} />
       {listOpen && <ModuleList onClose={() => setListOpen(false)} />}
     </header>
   )

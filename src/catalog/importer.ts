@@ -3,7 +3,7 @@ import { detectCadFormat } from './cad'
 import type { CatalogStore } from './db'
 import { sha256Hex } from './hash'
 import type { Tessellation } from './tessellation'
-import type { CadFormat, Product } from './types'
+import type { CadFormat, Product, ProductCategory, ProductPneumatic } from './types'
 
 /** 解析 CAD 檔的函式：瀏覽器中由 Web Worker 執行，測試時直接呼叫 occt-import-js */
 export type CadParser = (bytes: Uint8Array, format: CadFormat) => Promise<Tessellation>
@@ -57,4 +57,60 @@ export async function importCadFile(
     throw err
   }
   return { product, status: 'new' }
+}
+
+export interface ModelOnlyInput {
+  modelCode: string
+  name?: string
+  category: ProductCategory
+  maker?: string
+  price?: number
+  pneumatic?: ProductPneumatic
+}
+
+/**
+ * 建立只有型號、還沒有 3D 檔的產品（例如只放進迴路圖或 BOM 的元件）。
+ * source.sha256 用 `none:` 開頭的唯一值佔位，之後可用 attachCadFile 補上 3D 檔。
+ */
+export async function createModelOnlyProduct(store: CatalogStore, input: ModelOnlyInput): Promise<Product> {
+  const now = Date.now()
+  const id = newId('prod')
+  const product: Product = {
+    id,
+    modelCode: input.modelCode.trim(),
+    name: input.name?.trim() ?? '',
+    category: input.category,
+    source: { fileName: '', sha256: `none:${id}`, format: 'step', bytes: 0 },
+    ports: [],
+    ...(input.maker && { maker: input.maker }),
+    ...(input.price !== undefined && { price: input.price }),
+    ...(input.pneumatic && { pneumatic: input.pneumatic }),
+    createdAt: now,
+    updatedAt: now,
+  }
+  await store.putProduct(product)
+  return product
+}
+
+/**
+ * 替只有型號的產品附加 3D 檔。這個檔案若已經是另一個產品，丟出錯誤（避免同一個檔案出現兩次）。
+ */
+export async function attachCadFile(
+  store: CatalogStore,
+  product: Product,
+  fileName: string,
+  bytes: Uint8Array,
+  parse: CadParser,
+): Promise<Product> {
+  const format = detectCadFormat(fileName)
+  if (!format) throw new Error(`不支援的檔案格式：${fileName}（請使用 STEP 或 IGES）`)
+  const sha256 = sha256Hex(bytes)
+  const other = await store.getProductBySha(sha256)
+  if (other && other.id !== product.id) throw new Error(`這個 3D 檔已經是產品「${other.modelCode}」`)
+  const tessellation = await parse(bytes, format)
+  const next: Product = { ...product, source: { fileName, sha256, format, bytes: bytes.length }, updatedAt: Date.now() }
+  await store.putFile({ sha256, fileName, bytes })
+  await store.putMesh({ sha256, tessellation })
+  await store.putProduct(next)
+  return next
 }

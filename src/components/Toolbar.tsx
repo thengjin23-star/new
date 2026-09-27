@@ -7,10 +7,12 @@ import { exportCircuitBom, exportCircuitFile, importCircuitFile, saveCircuit } f
 import { useCircuitStore, type SimStatus } from '../store/circuitStore'
 import { useCircuitUi } from '../store/circuitUi'
 import { FIT_VIEW_OPTIONS } from './canvasConfig'
+import { useSettingsStore } from '../settings/settings'
 import {
   DemoIcon,
   FileIcon,
   FlipIcon,
+  GearIcon,
   PauseIcon,
   PlayIcon,
   RedoIcon,
@@ -202,6 +204,7 @@ export function Toolbar() {
           {(s.dirty || !s.stored) && s.hasNodes && <span className="ml-1 text-amber-300" title="有未儲存的變更">●</span>}
         </span>
         <StatusPill />
+        <ToolButton onClick={() => useSettingsStore.getState().openDialog(true)} icon={<GearIcon />} label="設定" compact />
       </div>
 
       <input

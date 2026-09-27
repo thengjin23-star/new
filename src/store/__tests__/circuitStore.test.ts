@@ -229,3 +229,23 @@ describe('電路檔案（.pcir）', () => {
     expect(edges.map((e) => e.id)).toEqual(['t2'])
   })
 })
+
+describe('BOM 單價與合計', () => {
+  it('產品有單價時加上單價、小計與合計欄；有廠牌時加上廠牌欄', () => {
+    const ref = { id: 'v1', modelCode: 'SY3120', name: '電磁閥' }
+    store().addComponent('valve52Single', { x: 0, y: 0 }, { product: ref })
+    store().addComponent('valve52Single', { x: 0, y: 0 }, { product: ref })
+    store().addComponent('cylinderDouble', { x: 0, y: 0 })
+    const rows = buildCircuitBom(store().nodes, { v1: { maker: 'SMC', price: 1250 } })
+    expect(rows[0]).toMatchObject({ maker: 'SMC', price: 1250, quantity: 2 })
+    const csv = circuitBomToCsv({ name: '報價' }, rows)
+    expect(csv).toContain('項次,型號,名稱,元件類型,廠牌,數量,標號,單價,小計')
+    expect(csv).toContain('1,SY3120,電磁閥,5/2 單電控閥,SMC,2,1V1 1V2,1250,2500')
+    expect(csv.trimEnd().endsWith('合計,2500')).toBe(true)
+  })
+
+  it('沒有任何單價時不加金額欄', () => {
+    store().addComponent('cylinderDouble', { x: 0, y: 0 })
+    expect(circuitBomToCsv({ name: 'x' }, buildCircuitBom(store().nodes))).not.toContain('單價')
+  })
+})

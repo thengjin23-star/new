@@ -88,9 +88,18 @@ export interface Product {
   ports: ProductPort[]
   /** 氣動功能；沒有設定時由分類與埠名自動判斷（見 catalog/pneumatic.ts） */
   pneumatic?: ProductPneumatic
+  /** 廠牌，例如 SMC、AirTAC */
+  maker?: string
+  /** 系列 */
+  series?: string
+  /** 單價（選填；有填時 BOM 會算出小計與合計） */
+  price?: number
   notes?: string
   createdAt: number
   updatedAt: number
 }
 
 export const productLabel = (p: Pick<Product, 'modelCode' | 'name'>): string => p.name || p.modelCode
+
+/** 產品是否有 3D 檔（沒有 3D 的產品只有型號，source.bytes 為 0） */
+export const hasModel = (p: Pick<Product, 'source'>): boolean => p.source.bytes > 0

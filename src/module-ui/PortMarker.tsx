@@ -38,7 +38,10 @@ export function PortMarker({ instanceId, port, showLabel }: { instanceId: string
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     if (e.delta > 4) return
     e.stopPropagation()
-    clickPort({ instance: instanceId, port: port.id })
+    const s = useModuleStore.getState()
+    // 量測模式：以埠的中心為量測點
+    if (s.mode === 'measure') s.addMeasurePortPoint({ instance: instanceId, port: port.id })
+    else clickPort({ instance: instanceId, port: port.id })
   }
 
   // 標籤保持精簡（安裝面只顯示名稱），完整規格放在提示文字
@@ -69,7 +72,9 @@ export function PortMarker({ instanceId, port, showLabel }: { instanceId: string
             data-port-label={`${instanceId}:${port.id}`}
             onClick={(e) => {
               e.stopPropagation()
-              clickPort({ instance: instanceId, port: port.id })
+              const s = useModuleStore.getState()
+              if (s.mode === 'measure') s.addMeasurePortPoint({ instance: instanceId, port: port.id })
+              else clickPort({ instance: instanceId, port: port.id })
             }}
             className="rounded-full border-2 bg-white/95 px-1.5 py-px text-[10px] leading-4 font-medium whitespace-nowrap text-slate-700 shadow-sm hover:bg-white"
             style={{ borderColor: color }}

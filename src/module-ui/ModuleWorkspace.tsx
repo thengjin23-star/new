@@ -9,6 +9,8 @@ import { useModuleStore } from './moduleStore'
 import { PortEditor } from './PortEditor'
 import { Button } from '../components/ui'
 import { Viewport } from './Viewport'
+import { useModuleBounds } from './useModuleBounds'
+import { formatMm } from './bounds'
 import { getPort } from '../assembly/moduleOps'
 
 /** 3D 模組組立工作區（延遲載入） */
@@ -62,6 +64,7 @@ export default function ModuleWorkspace() {
             <Viewport />
           )}
           <HintBar />
+          <DimensionsBadge />
           <EmptyState />
           <Toast />
           {dragging && (
@@ -86,6 +89,7 @@ function useKeyboard() {
       const s = useModuleStore.getState()
       if (e.key === 'Escape') {
         if (s.connectFrom) s.cancelConnect()
+        else if (s.mode === 'measure' && s.measure.length) s.clearMeasure()
         else if (s.mode !== 'select') s.setMode('select')
         else s.select(undefined)
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && s.selected) {
@@ -112,9 +116,11 @@ function HintBar() {
   const doc = useModuleStore((s) => s.doc)
   const products = useModuleStore((s) => s.products)
   let text: string | undefined
-  if (connectFrom) {
+  if (mode === 'measure') {
+    text = '量測：點選零件表面或埠的中心，連點兩個點顯示距離；再點會開始新的量測（Esc 結束）'
+  } else if (connectFrom) {
     const spec = getPort(doc, products, connectFrom)?.spec
-    text = `已選 ${portLabel(doc, products, connectFrom)}${spec ? `（${formatSpec(spec)}）` : ''} → 點選另一個零件的埠：綠＝正確、黃＝注意、紅＝不相容、灰＝未設定（Esc 取消）`
+    text = `已選 ${portLabel(doc, products, connectFrom)}${spec ? `（${formatSpec(spec)}）` : ''} → 點選另一個零件的埠（綠＝正確、黃＝注意、紅＝不相容、灰＝未設定），或從產品庫挑選可接的零件（Esc 取消）`
   } else if (mode === 'define-port') {
     text = '新增埠：點選零件上的孔、凸柱或平面（Esc 結束）'
   } else if (hasParts) {
@@ -124,6 +130,30 @@ function HintBar() {
   return (
     <div className="pointer-events-none absolute top-3 left-1/2 max-w-[90%] -translate-x-1/2 rounded-md bg-slate-800/85 px-3 py-1.5 text-center text-xs text-white shadow">
       {text}
+    </div>
+  )
+}
+
+/** 左上角：模組外形尺寸（W×D×H），可切換 3D 尺寸線 */
+function DimensionsBadge() {
+  const bounds = useModuleBounds()
+  const showDims = useModuleStore((s) => s.showDims)
+  const toggleDims = useModuleStore((s) => s.toggleDims)
+  if (!bounds) return null
+  const [w, d, h] = [0, 1, 2].map((k) => formatMm(bounds.max[k] - bounds.min[k]))
+  return (
+    <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-md border border-slate-200 bg-white/90 px-2 py-1 text-xs text-slate-700 shadow-sm">
+      <span data-dims>
+        外形 W {w} × D {d} × H {h} mm
+      </span>
+      <button
+        type="button"
+        aria-pressed={showDims}
+        onClick={toggleDims}
+        className={`rounded px-1.5 py-0.5 ${showDims ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+      >
+        尺寸線
+      </button>
     </div>
   )
 }
@@ -162,7 +192,7 @@ function Toast() {
   return (
     <div
       role="alert"
-      className={`absolute bottom-3 left-3 z-10 flex max-w-lg items-start gap-2 rounded-md border px-3 py-2 text-sm shadow ${message.kind === 'error' ? 'border-red-200 bg-red-50 text-red-800' : 'border-slate-200 bg-white text-slate-700'}`}
+      className={`absolute bottom-12 left-3 z-10 flex max-w-lg items-start gap-2 rounded-md border px-3 py-2 text-sm shadow ${message.kind === 'error' ? 'border-red-200 bg-red-50 text-red-800' : 'border-slate-200 bg-white text-slate-700'}`}
     >
       <span className="flex-1">{message.text}</span>
       <button type="button" onClick={dismiss} className="text-slate-400 hover:text-slate-700" aria-label="關閉訊息">

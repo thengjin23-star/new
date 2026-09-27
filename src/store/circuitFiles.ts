@@ -1,4 +1,4 @@
-import { getCatalog } from '../catalog/library'
+import { getCatalog, useLibraryStore } from '../catalog/library'
 import { downloadFile, safeFileName } from '../utils/download'
 import { buildCircuitBom, circuitBomToCsv } from './circuitBom'
 import {
@@ -88,5 +88,6 @@ export async function importCircuitFile(file: File): Promise<void> {
 
 export function exportCircuitBom(): void {
   const { info, nodes } = useCircuitStore.getState()
-  downloadFile(circuitBomToCsv(info, buildCircuitBom(nodes)), `${safeFileName(info.name)}-BOM.csv`, 'text/csv;charset=utf-8')
+  const products = useLibraryStore.getState().products
+  downloadFile(circuitBomToCsv(info, buildCircuitBom(nodes, products)), `${safeFileName(info.name)}-BOM.csv`, 'text/csv;charset=utf-8')
 }
