@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 /** 迴路圖分頁的介面狀態（不存檔） */
-export type CircuitDialog = 'files' | 'saveAs' | undefined
+export type CircuitDialog = 'files' | 'saveAs' | 'drawing' | undefined
 
 interface CircuitUiState {
   /** 窄螢幕時屬性面板以抽屜方式開關 */

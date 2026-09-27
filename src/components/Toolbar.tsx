@@ -157,6 +157,8 @@ export function Toolbar() {
           { label: `匯入迴路圖（${PCIR_EXT}）…`, disabled: !editing, onSelect: () => fileInput.current?.click() },
           { label: `匯出迴路圖（${PCIR_EXT}）`, disabled: !s.hasNodes, hint: '可寄給同事或在其他裝置開啟', onSelect: exportCircuitFile },
           { label: '匯出 BOM（CSV）', disabled: !s.hasNodes, onSelect: exportCircuitBom },
+          { divider: true },
+          { label: '出圖（PDF／DXF／SVG）…', disabled: !s.hasNodes, hint: '含標題欄與零件表，可列印或給客戶', onSelect: () => openDialog('drawing') },
         ]}
       />
       <Menu

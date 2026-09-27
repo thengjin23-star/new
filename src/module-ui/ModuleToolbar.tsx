@@ -3,6 +3,8 @@ import { WorkspaceTabs } from '../components/WorkspaceTabs'
 import { useSettingsStore } from '../settings/settings'
 import { useModuleStore } from './moduleStore'
 import { BarButton, Button, Dialog } from '../components/ui'
+import { DrawingDialog } from './DrawingDialog'
+import { StepExportDialog } from './StepExportDialog'
 
 export function ModuleToolbar() {
   const doc = useModuleStore((s) => s.doc)
@@ -13,8 +15,10 @@ export function ModuleToolbar() {
   const selected = useModuleStore((s) => s.selected)
   const drawer = useModuleStore((s) => s.drawer)
   const mode = useModuleStore((s) => s.mode)
-  const { newModule, undo, redo, requestFit, exportModuleFile, renameModule, toggleDrawer, setMode } = useModuleStore.getState()
+  const drawingOpen = useModuleStore((s) => s.drawingOpen)
+  const { newModule, undo, redo, requestFit, exportModuleFile, renameModule, toggleDrawer, setMode, openDrawing } = useModuleStore.getState()
   const [listOpen, setListOpen] = useState(false)
+  const [stepOpen, setStepOpen] = useState(false)
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 overflow-x-auto bg-slate-800 px-2 text-white sm:px-3">
@@ -40,12 +44,16 @@ export function ModuleToolbar() {
         title="量測兩點距離"
       />
       <BarButton label="對準選取" onClick={() => requestFit(selected)} disabled={!selected} title="縮放到選取的零件" />
+      <BarButton label="產生圖面" onClick={() => openDrawing(true)} disabled={doc.instances.length === 0} title="三視圖、零件表、標題欄：PDF／DXF／SVG" />
+      <BarButton label="匯出 STEP" onClick={() => setStepOpen(true)} disabled={doc.instances.length === 0} title="STEP 組立檔（所有零件依組立位置）" />
       <BarButton label="匯出模組" onClick={() => void exportModuleFile()} disabled={doc.instances.length === 0} />
       <span className="ml-auto pl-2 text-xs whitespace-nowrap text-slate-300" role="status">
         {busy ?? (saved ? '已儲存' : '儲存中…')}
       </span>
       <BarButton label="設定" onClick={() => useSettingsStore.getState().openDialog(true)} />
       {listOpen && <ModuleList onClose={() => setListOpen(false)} />}
+      {drawingOpen && <DrawingDialog onClose={() => openDrawing(false)} />}
+      {stepOpen && <StepExportDialog onClose={() => setStepOpen(false)} />}
     </header>
   )
 }

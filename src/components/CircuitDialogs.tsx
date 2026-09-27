@@ -2,6 +2,7 @@ import { useReactFlow } from '@xyflow/react'
 import { useEffect, useState } from 'react'
 import { deleteCircuit, listCircuits, openCircuit, renameCircuit, saveCircuit, type CircuitSummary } from '../store/circuitFiles'
 import { useCircuitStore } from '../store/circuitStore'
+import { CircuitDrawingDialog } from './CircuitDrawingDialog'
 import { useCircuitUi } from '../store/circuitUi'
 import { FIT_VIEW_OPTIONS } from './canvasConfig'
 import { Button, Dialog } from './ui'
@@ -165,6 +166,7 @@ export function CircuitDialogs() {
   const close = () => useCircuitUi.getState().openDialog(undefined)
   if (dialog === 'files') return <FilesDialog onClose={close} />
   if (dialog === 'saveAs') return <SaveAsDialog onClose={close} />
+  if (dialog === 'drawing') return <CircuitDrawingDialog onClose={close} />
   return null
 }
 

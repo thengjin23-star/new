@@ -5,7 +5,7 @@ import { findAdapters, insertAdapter, type AdapterOption } from '../assembly/ada
 import { mateStatKeys, suggestPartners, type Suggestion } from '../assembly/memory'
 import { bomToCsv, buildBom } from '../assembly/bom'
 import * as ops from '../assembly/moduleOps'
-import type { ModuleDoc, PortRef } from '../assembly/types'
+import type { DrawingInfo, ModuleDoc, PortRef } from '../assembly/types'
 import { exportLibraryArchive, exportModuleArchive, importArchive, LIBRARY_EXT, MODULE_EXT } from '../catalog/archive'
 import { detectCadFormat } from '../catalog/cad'
 import { parseCadInWorker } from '../catalog/cadClient'
@@ -78,6 +78,8 @@ interface State {
   measure: Vec3[]
   /** 在 3D 畫面顯示外形尺寸線 */
   showDims: boolean
+  /** 「產生圖面」對話框 */
+  drawingOpen: boolean
 
   init(): Promise<void>
   importFiles(files: readonly File[]): Promise<void>
@@ -132,6 +134,11 @@ interface State {
   addMeasurePortPoint(ref: PortRef): void
   clearMeasure(): void
   toggleDims(): void
+  openDrawing(open: boolean): void
+  /** 圖面設定（圖號、版次、選項）：記在模組裡，不列入復原歷史 */
+  setDrawingInfo(patch: Partial<DrawingInfo>): void
+  /** 確保目前模組所有零件的網格都已載入 */
+  loadDocMeshes(): Promise<void>
 }
 
 let catalog: CatalogStore | undefined
@@ -357,6 +364,7 @@ export const useModuleStore = create<State>()((set, get) => {
     fitRequest: 0,
     measure: [],
     showDims: false,
+    drawingOpen: false,
 
     init() {
       initPromise ??= initialize()
@@ -808,6 +816,20 @@ export const useModuleStore = create<State>()((set, get) => {
 
     toggleDims() {
       set((s) => ({ showDims: !s.showDims }))
+    },
+
+    openDrawing(open) {
+      set({ drawingOpen: open })
+    },
+
+    setDrawingInfo(patch) {
+      const { doc } = get()
+      set({ doc: { ...doc, drawing: { ...doc.drawing, ...patch }, updatedAt: Date.now() }, saved: false })
+      scheduleSave()
+    },
+
+    loadDocMeshes() {
+      return ensureDocMeshes(get().doc)
     },
   }
 })

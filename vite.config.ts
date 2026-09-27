@@ -39,10 +39,17 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         runtimeCaching: [
           {
-            // STEP 解析元件（WASM 約 7.6 MB）：第一次使用時下載並快取，之後離線也能匯入
+            // WebAssembly 元件：STEP 解析（約 7.6 MB）、STEP 組立檔輸出（約 23 MB）、PDF 字型縮減（約 0.7 MB）。
+            // 第一次使用時下載並快取，之後離線也能用
             urlPattern: ({ url }) => url.pathname.endsWith('.wasm'),
             handler: 'CacheFirst',
-            options: { cacheName: 'wasm', expiration: { maxEntries: 4 } },
+            options: { cacheName: 'wasm', expiration: { maxEntries: 6 } },
+          },
+          {
+            // PDF 用的中文字型（Noto Sans TC，約 7 MB）：第一次輸出 PDF 時下載並快取
+            urlPattern: ({ url }) => url.pathname.includes('/fonts/'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'fonts', expiration: { maxEntries: 4 } },
           },
           {
             // 範例零件
