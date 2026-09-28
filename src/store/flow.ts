@@ -1,5 +1,5 @@
 import type { Connection, Edge, Node } from '@xyflow/react'
-import { portKey, type Circuit, type Params } from '../engine'
+import { portKey, registry, type Circuit, type Params } from '../engine'
 
 export type Rotation = 0 | 90 | 180 | 270
 
@@ -24,6 +24,8 @@ export type PneumaticNodeData = {
   params?: Params
   /** 備註 */
   note?: string
+  /** 標號與型號放在符號的哪一側；未指定時自動選沒有埠的一側 */
+  labelSide?: 'left' | 'right' | 'top' | 'bottom'
 }
 
 export type NoteNodeData = {
@@ -53,6 +55,30 @@ export function toCircuit(nodes: readonly CircuitFlowNode[], edges: readonly Tub
       to: portKey(e.target, e.targetHandle ?? ''),
     })),
   }
+}
+
+const pilotCache = new WeakMap<readonly CircuitFlowNode[], ReadonlySet<string>>()
+
+/** 所有先導／感測埠（氣控閥的 12、14，壓力開關）：`節點 id:埠` */
+export function pilotPorts(nodes: readonly CircuitFlowNode[]): ReadonlySet<string> {
+  let set = pilotCache.get(nodes)
+  if (!set) {
+    const found = new Set<string>()
+    for (const n of nodes) {
+      if (!isPneumaticNode(n) || !registry.has(n.data.componentType)) continue
+      for (const p of registry.get(n.data.componentType).ports) if (p.role === 'pilot') found.add(portKey(n.id, p.id))
+    }
+    pilotCache.set(nodes, (set = found))
+  }
+  return set
+}
+
+/** 接到先導埠的管線是控制管線（以虛線表示） */
+export function isPilotTube(
+  e: { source: string; sourceHandle?: string | null; target: string; targetHandle?: string | null },
+  pilots: ReadonlySet<string>,
+): boolean {
+  return pilots.has(portKey(e.source, e.sourceHandle ?? '')) || pilots.has(portKey(e.target, e.targetHandle ?? ''))
 }
 
 /** 管線是否可建立：不可接到同一個元件自己的埠，也不可與既有管線重複 */

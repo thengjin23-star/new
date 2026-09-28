@@ -1,10 +1,12 @@
 import { readFileSync } from 'node:fs'
 import occtimportjs from 'occt-import-js'
 import opencascade from 'replicad-opencascadejs'
-import { setOC } from 'replicad'
+import { measureVolume, setOC, type Shape3D } from 'replicad'
 import { Matrix4, Vector3 } from 'three'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { buildAssemblyStep } from '../stepAssembly'
+import { bezierLength } from '../../assembly/tubes'
+import type { Vec3 } from '../../geometry/vec3'
+import { buildAssemblyStep, sweepTube } from '../stepAssembly'
 
 const VALVE = new Uint8Array(readFileSync('public/samples/DEMO-VALVE-52-01.step'))
 const SILENCER = new Uint8Array(readFileSync('public/samples/DEMO-SILENCER-R18.step'))
@@ -91,4 +93,44 @@ describe('buildAssemblyStep', () => {
   it('缺少原始檔時提示是哪個零件', async () => {
     await expect(buildAssemblyStep(new Map(), [{ name: '3_X', source: 'nope', matrix: new Matrix4().elements }])).rejects.toThrow('3_X')
   })
+})
+
+describe('sweepTube', () => {
+  it('沿貝茲曲線掃出環形斷面的圓管：體積＝斷面積 × 曲線長', () => {
+    const points: Vec3[] = [
+      [0, 0, 0],
+      [0, 0, 40],
+      [80, 0, 40],
+      [80, 0, 0],
+    ]
+    const shape = sweepTube({ points, od: 6, id: 4 })
+    try {
+      const area = Math.PI * (3 * 3 - 2 * 2)
+      expect(measureVolume(shape as Shape3D)).toBeCloseTo(area * bezierLength(points, 400), -1)
+    } finally {
+      shape.delete()
+    }
+  })
+
+  it('PU 管寫入組立檔：名稱、顏色、外框', async () => {
+    const points: Vec3[] = [
+      [0, 0, 0],
+      [0, 0, 30],
+      [60, 0, 30],
+      [60, 0, 0],
+    ]
+    const progress: number[] = []
+    const bytes = await buildAssemblyStep(new Map(), [], (done) => progress.push(done), [
+      { name: '5_PU 管 Ø6_1', points, od: 6, id: 4, color: '#38bdf8' },
+    ])
+    expect(progress).toEqual([1])
+    const [tube] = await readBack(bytes)
+    expect(tube.name).toBe('5_PU 管 Ø6_1')
+    expect(tube.min[0]).toBeCloseTo(-3, 0)
+    expect(tube.max[0]).toBeCloseTo(63, 0)
+    expect(tube.min[2]).toBeCloseTo(0, 0)
+    // 曲線最高點 z = 0.75 × 30，再加半徑
+    expect(tube.max[2]).toBeCloseTo(22.5 + 3, 0)
+    expect(tube.color?.[2]).toBeGreaterThan(0.9)
+  }, 60_000)
 })

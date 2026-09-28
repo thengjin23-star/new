@@ -1,6 +1,7 @@
-import type { CylinderState, PortState } from '../../engine'
+import { END_TOLERANCE, sensorName, strParam, type CylinderState, type Params, type PortState } from '../../engine'
+import type { Rotation } from '../../store/flow'
 import { CHAMBER_PRESSURE_FILL, SYMBOL_STROKE } from '../../theme'
-import { PortLabel, Stub } from './parts'
+import { PortLabel, Stub, ValueText } from './parts'
 import type { SymbolDef, SymbolProps } from './types'
 
 /*
@@ -26,7 +27,52 @@ const BARREL_BOTTOM = BARREL_Y + BARREL_H
 
 export const chamberFill = (state: PortState | undefined) => (state === 'pressure' ? CHAMBER_PRESSURE_FILL : 'white')
 
-function CylinderDouble({ state, ports, rotation, flip, labels }: SymbolProps) {
+/** 感測器亮燈的顏色 */
+const SENSOR_ON = '#16a34a'
+
+/**
+ * 位置感測器：在活塞桿端縮回、伸出的位置畫上記號與名稱（a0、a1），模擬中到達該位置時亮燈。
+ * 沒有指定氣缸代號時不畫。
+ */
+export function SensorMarks({
+  params,
+  piston,
+  simulating,
+  rotation,
+  flip,
+}: {
+  params?: Params
+  piston: number
+  simulating: boolean
+  rotation: Rotation
+  flip?: boolean
+}) {
+  const letter = strParam(params, 'sensor')
+  if (!letter) return null
+  const rodEnd0 = PISTON_MIN_X + PISTON_W + ROD_LEN - 2
+  const marks = [
+    { x: rodEnd0, name: sensorName(letter, 0), on: piston <= END_TOLERANCE },
+    { x: rodEnd0 + TRAVEL, name: sensorName(letter, 1), on: piston >= 1 - END_TOLERANCE },
+  ]
+  return (
+    <g data-sensors={letter}>
+      {marks.map((m) => {
+        const lit = simulating && m.on
+        return (
+          <g key={m.name} data-sensor={m.name} data-on={lit || undefined}>
+            <line x1={m.x} y1={14} x2={m.x} y2={8} stroke={lit ? SENSOR_ON : '#64748b'} strokeWidth={1.5} />
+            <polygon points={`${m.x - 4},${8} ${m.x + 4},${8} ${m.x},${13}`} fill={lit ? SENSOR_ON : 'white'} stroke={lit ? SENSOR_ON : '#64748b'} strokeWidth={1.2} />
+            <ValueText x={m.x} y={1} rotation={rotation} flip={flip} size={9} color={lit ? SENSOR_ON : '#475569'}>
+              {m.name}
+            </ValueText>
+          </g>
+        )
+      })}
+    </g>
+  )
+}
+
+function CylinderDouble({ state, ports, rotation, flip, labels, params }: SymbolProps) {
   const { piston } = state as CylinderState
   const px = PISTON_MIN_X + piston * TRAVEL
   const rodY = BARREL_Y + BARREL_H / 2 - ROD_H / 2
@@ -53,6 +99,8 @@ function CylinderDouble({ state, ports, rotation, flip, labels }: SymbolProps) {
       <rect x={rodEnd - 4} y={rodY - 5} width={4} height={ROD_H + 10} fill={SYMBOL_STROKE} />
       {/* 活塞 */}
       <rect x={px} y={BARREL_Y + 1} width={PISTON_W} height={BARREL_H - 2} fill={SYMBOL_STROKE} />
+
+      <SensorMarks params={params} piston={piston} simulating={!!ports} rotation={rotation} flip={flip} />
 
       <PortLabel x={PORT_A_X + 10} y={HEIGHT - 8} rotation={rotation} flip={flip}>
         {labels?.A ?? 'A'}

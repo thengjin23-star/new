@@ -30,7 +30,11 @@ export function StepExportDialog({ onClose }: { onClose: () => void }) {
         if (!file) throw new Error('找不到零件的原始 STEP 檔（可能是從舊版的封存檔匯入）')
         files[sha] = file.bytes
       }
-      const bytes = await exportAssemblyStep({ files, parts: plan.parts }, (progress) => setPhase({ kind: 'running', progress }), controller.signal)
+      const bytes = await exportAssemblyStep(
+        { files, parts: plan.parts, tubes: plan.tubes },
+        (progress) => setPhase({ kind: 'running', progress }),
+        controller.signal,
+      )
       downloadFile(bytes, `${safeFileName(doc.name)}.step`, 'application/step')
       setPhase({ kind: 'done', bytes: bytes.length })
     } catch (err) {
@@ -56,7 +60,7 @@ export function StepExportDialog({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <Button onClick={onClose}>關閉</Button>
-            <Button variant="primary" disabled={!plan.parts.length} onClick={() => void start()}>
+            <Button variant="primary" disabled={!plan.parts.length && !plan.tubes.length} onClick={() => void start()}>
               {phase.kind === 'done' ? '再匯出一次' : '開始匯出'}
             </Button>
           </>
@@ -65,8 +69,8 @@ export function StepExportDialog({ onClose }: { onClose: () => void }) {
     >
       <div className="space-y-3 text-sm text-slate-700">
         <p>
-          把模組中的 {plan.parts.length} 個零件，依組立位置寫成一個 STEP 檔（AP242，單位 mm），每個零件以「項次_型號」命名，可在 SolidWorks、Inventor、Fusion
-          360 等 CAD 軟體開啟。
+          把模組中的 {plan.parts.length} 個零件{plan.tubes.length > 0 && `與 ${plan.tubes.length} 條 PU 管`}，依組立位置寫成一個 STEP 檔（AP242，單位
+          mm），每個零件以「項次_型號」命名，可在 SolidWorks、Inventor、Fusion 360 等 CAD 軟體開啟。
         </p>
         <p className="text-xs text-slate-500">第一次使用需下載 STEP 處理元件（約 23 MB），之後離線也能使用。</p>
         {plan.skipped.length > 0 && (
@@ -89,7 +93,9 @@ export function StepExportDialog({ onClose }: { onClose: () => void }) {
             <p className="text-xs text-slate-500">
               {progress?.stage === 'parts'
                 ? progress.done < progress.total
-                  ? `轉換零件 ${progress.done} / ${progress.total}…`
+                  ? progress.done < plan.parts.length
+                    ? `轉換零件 ${progress.done} / ${plan.parts.length}…`
+                    : `產生 PU 管 ${progress.done - plan.parts.length} / ${plan.tubes.length}…`
                   : '寫入 STEP 檔…'
                 : '載入 STEP 處理元件…'}
             </p>

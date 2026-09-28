@@ -115,7 +115,10 @@ function PneumaticNodeImpl({ id, data, selected }: NodeProps<PneumaticFlowNode>)
 
   const title = [tag, product?.modelCode, def.label].filter(Boolean).join('　')
   const portSides = new Set(Object.values(symbol.ports).map((g) => rotateSide(flipSide(g.side, flip), rotation)))
-  const labelSide = LABEL_SIDES.find((side) => !portSides.has(side)) ?? 'left'
+  const freeSide = LABEL_SIDES.find((side) => !portSides.has(side))
+  const labelSide = data.labelSide ?? freeSide ?? 'left'
+  // 四邊都有埠（例如雙氣控閥）：標號放在左上，避開中間的控制線
+  const labelClass = !data.labelSide && !freeSide ? 'top-0 right-full mr-2 text-right' : LABEL_CLASS[labelSide]
 
   return (
     <div
@@ -186,7 +189,7 @@ function PneumaticNodeImpl({ id, data, selected }: NodeProps<PneumaticFlowNode>)
       </div>
 
       {view.showTags && (tag || product) && (
-        <div className={`pointer-events-none absolute leading-tight whitespace-nowrap ${LABEL_CLASS[labelSide]}`} data-node-label>
+        <div className={`pointer-events-none absolute leading-tight whitespace-nowrap ${labelClass}`} data-node-label>
           {tag && <div className="text-[11px] font-semibold text-slate-700">{tag}</div>}
           {product && <div className="font-mono text-[10px] text-slate-500">{product.modelCode}</div>}
         </div>

@@ -30,6 +30,13 @@ const EXTRA_ALIASES: Record<string, readonly string[]> = {
   IN: ['P', '入口', '進氣', 'INLET'],
   OUT: ['A', '出口', '出氣', 'OUTLET'],
   E: ['R', 'EXH', '排氣'],
+  // 梭動閥、雙壓閥的兩個入口與出口
+  X: ['IN1', 'P1', '1'],
+  Y: ['IN2', 'P2'],
+  A: ['OUT', 'OUTLET', '出口'],
+  // 氣控閥的先導埠
+  '14': ['Z', 'PILOT', '先導', 'X'],
+  '12': ['Y', 'PILOT2'],
 }
 
 /** 缸體的 A（後端、無桿側）／B（前端、有桿側）常見名稱 */
@@ -122,6 +129,13 @@ const has = (text: string, ...words: string[]) => words.some((w) => text.include
 function valveType(product: Product, text: string): string | undefined {
   const count = pipingPorts(product.ports).length
   const upper = text.toUpperCase()
+  // 邏輯與訊號元件（依名稱）
+  if (has(text, '梭動') || has(upper, 'SHUTTLE')) return 'shuttleValve'
+  if (has(text, '雙壓') || has(upper, 'TWO PRESSURE', 'TWO-PRESSURE')) return 'twoPressureValve'
+  if (has(text, '快速排氣', '快排') || has(upper, 'QUICK EXHAUST')) return 'quickExhaust'
+  if (has(text, '延時') || has(upper, 'TIME DELAY', 'TIMER')) return 'valve32Timer'
+  if (has(text, '壓力開關') || has(upper, 'PRESSURE SWITCH')) return 'pressureSwitch'
+  const pilot = has(text, '氣控', '氣導') || has(upper, 'PILOT')
   const is53 = has(upper, '5/3', '5-3', '53') && has(text, '中位', '5/3')
   if (is53 || has(text, '5/3')) {
     if (has(text, '排氣', 'EXHAUST', 'ABR')) return 'valve53Exhaust'
@@ -129,11 +143,14 @@ function valveType(product: Product, text: string): string | undefined {
     return 'valve53Closed'
   }
   if (count >= 5 || has(upper, '5/2', '5-2')) {
+    if (pilot) return has(text, '雙氣控', '雙頭') || has(upper, 'DOUBLE') ? 'valve52DoublePilot' : 'valve52Pilot'
     if (has(text, '雙電控', '雙頭', 'DOUBLE')) return 'valve52Double'
     if (has(text, '手動', '手扳', 'MANUAL', 'LEVER')) return 'valve52Manual'
     return 'valve52Single'
   }
   if (count === 3 || has(upper, '3/2', '3-2')) {
+    if (has(text, '滾輪') || has(upper, 'ROLLER')) return 'valve32Roller'
+    if (pilot) return 'valve32Pilot'
     if (has(text, '按鈕', 'BUTTON', 'PUSH')) return 'valve32Button'
     if (has(text, '常開', 'N.O', 'NO型', 'NORMALLY OPEN')) return 'valve32NO'
     return 'valve32NC'
@@ -223,6 +240,7 @@ export function pneumaticTypeOptions(): { group: string; options: { value: strin
     source: '氣源與氣源處理',
     valve: '方向控制閥',
     flow: '流量控制',
+    logic: '訊號與邏輯',
     actuator: '致動器',
     misc: '其他',
   }

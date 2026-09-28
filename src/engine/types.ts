@@ -16,8 +16,9 @@ export type PortState = 'pressure' | 'exhaust' | 'blocked'
  * - `working`：工作埠（閥的 A/B、氣缸的 A/B）
  * - `exhaust`：排氣埠，應以管線接到排氣口（閥的 EA/EB）；未接時 UI 會提出警告
  * - `vent`：本身就是通往大氣的開口（排氣口／消音器）
+ * - `pilot`：先導／感測埠（氣控閥的 12、14，壓力開關）：只感測壓力、沒有流量，管線畫成虛線
  */
-export type PortRole = 'supply' | 'working' | 'exhaust' | 'vent'
+export type PortRole = 'supply' | 'working' | 'exhaust' | 'vent' | 'pilot'
 
 export interface PortDef {
   /** 元件內唯一的埠代號，例如 'P'、'A'、'EA' */
@@ -78,8 +79,15 @@ export interface SolveResult {
   pressure: Readonly<Record<PortKey, number>>
 }
 
+/** 訊號名稱 → 是否成立（感測器 a0、a1…，電氣輸出 Y1、Y2…，壓力開關 PS1…） */
+export type Signals = Readonly<Record<string, boolean>>
+
 export interface SimState extends SolveResult {
   /** 模擬經過的秒數 */
   time: number
   componentStates: ComponentStates
+  /** 電氣輸出（Y1、Y2…）：由程序控制或點擊有命名的電磁線圈設定 */
+  outputs: Signals
+  /** 目前所有訊號：各元件產生的感測訊號，加上電氣輸出 */
+  signals: Signals
 }

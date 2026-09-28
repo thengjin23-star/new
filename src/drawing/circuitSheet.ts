@@ -41,13 +41,15 @@ export interface CircuitSheetNode {
   ports: Readonly<Record<string, { x: number; y: number; side: Side }>>
   tag?: string
   modelCode?: string
+  labelSide?: Side
 }
 
 export interface CircuitSheetInput {
   paper: PaperSize
   title: Omit<TitleInfo, 'scale' | 'projection'>
   nodes: readonly CircuitSheetNode[]
-  tubes: readonly { source: string; sourcePort: string; target: string; targetPort: string }[]
+  /** pilot = 接到先導埠的控制管線（虛線） */
+  tubes: readonly { source: string; sourcePort: string; target: string; targetPort: string; pilot?: boolean }[]
   notes: readonly { x: number; y: number; text: string }[]
   bom: readonly { index: number; tags: readonly string[]; modelCode?: string; name: string; quantity: number }[]
   /** 顯示標號與型號 */
@@ -124,7 +126,8 @@ function circuitPrimitives(input: CircuitSheetInput): { primitives: Primitive[];
       borderRadius: 6,
       offset: 16,
     })
-    for (const line of pathToPolylines(path)) out.push({ kind: 'polyline', layer: 'TUBE', points: line.points, width: 3, closed: false })
+    for (const line of pathToPolylines(path))
+      out.push({ kind: 'polyline', layer: 'TUBE', points: line.points, width: t.pilot ? 2 : 3, closed: false, ...(t.pilot && { dash: [8, 5] }) })
   }
 
   // 符號、分歧點、標號
@@ -140,14 +143,17 @@ function circuitPrimitives(input: CircuitSheetInput): { primitives: Primitive[];
     // 標號貼著實際畫出的符號（5/3 閥的節點外框含閥位移動的空間，比符號寬很多）
     const box = drawnBox(symbol) ?? outerBox(n)
     const used = new Set(Object.values(n.ports).map((g) => rotateSide(flipSide(g.side, n.flip), n.rotation)))
-    const side = LABEL_ORDER.find((s) => !used.has(s)) ?? 'left'
+    const free = LABEL_ORDER.find((s) => !used.has(s))
+    const side = n.labelSide ?? free ?? 'left'
+    // 四邊都有埠（例如雙氣控閥）：標號靠上，避開中間的控制線
+    const crowded = !n.labelSide && !free
     const size = [11, 10]
     const lineH = 14
     const total = lines.length * lineH
     lines.forEach((text, i) => {
       const common = { layer: 'TEXT' as const, size: size[i] ?? 10, text, kind: 'text' as const, color: i ? '#334155' : undefined }
       if (side === 'left' || side === 'right') {
-        const y = box.y + box.h / 2 - total / 2 + (i + 0.5) * lineH
+        const y = crowded ? box.y + (i + 0.5) * lineH : box.y + box.h / 2 - total / 2 + (i + 0.5) * lineH
         out.push({ ...common, at: [side === 'left' ? box.x - 8 : box.x + box.w + 8, y], align: side === 'left' ? 'right' : 'left', valign: 'middle' })
       } else {
         const y = side === 'top' ? box.y - 4 - total + (i + 0.5) * lineH : box.y + box.h + 4 + (i + 0.5) * lineH

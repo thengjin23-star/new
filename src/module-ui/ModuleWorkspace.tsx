@@ -9,6 +9,7 @@ import { useModuleStore } from './moduleStore'
 import { PortEditor } from './PortEditor'
 import { Button } from '../components/ui'
 import { Viewport } from './Viewport'
+import { SimulationPanel } from './SimulationPanel'
 import { useModuleBounds } from './useModuleBounds'
 import { formatMm } from './bounds'
 import { getPort } from '../assembly/moduleOps'
@@ -64,6 +65,7 @@ export default function ModuleWorkspace() {
             <Viewport />
           )}
           <HintBar />
+          <SimulationPanel />
           <DimensionsBadge />
           <EmptyState />
           <Toast />
@@ -89,10 +91,17 @@ function useKeyboard() {
       const s = useModuleStore.getState()
       if (e.key === 'Escape') {
         if (s.connectFrom) s.cancelConnect()
+        else if (s.mode === 'tube' && s.tubeFrom) s.setMode('tube')
         else if (s.mode === 'measure' && s.measure.length) s.clearMeasure()
         else if (s.mode !== 'select') s.setMode('select')
-        else s.select(undefined)
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && s.selected) {
+        else {
+          s.select(undefined)
+          s.selectTube(undefined)
+        }
+      } else if (s.mode === 'simulate') {
+        // 模擬中不能編輯
+        return
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && (s.selected || s.selectedTube)) {
         e.preventDefault()
         s.removeSelected()
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
@@ -116,7 +125,12 @@ function HintBar() {
   const doc = useModuleStore((s) => s.doc)
   const products = useModuleStore((s) => s.products)
   let text: string | undefined
-  if (mode === 'measure') {
+  if (mode === 'simulate') {
+    // 模擬面板已有說明
+    text = undefined
+  } else if (mode === 'tube') {
+    text = '接 PU 管：點選一個快插接頭，再點另一個相同管徑的快插接頭（Esc 結束）'
+  } else if (mode === 'measure') {
     text = '量測：點選零件表面或埠的中心，連點兩個點顯示距離；再點會開始新的量測（Esc 結束）'
   } else if (connectFrom) {
     const spec = getPort(doc, products, connectFrom)?.spec

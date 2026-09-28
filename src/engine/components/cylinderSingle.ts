@@ -1,7 +1,8 @@
 import { CYLINDER_STROKE_SECONDS } from '../constants'
 import { defineComponent } from '../definition'
 import { numParam } from '../params'
-import { CYLINDER_PARAMS, type CylinderState } from './cylinderDouble'
+import { SENSOR_PARAM } from '../signals'
+import { clampPiston, CYLINDER_PARAMS, cylinderSignals, type CylinderState } from './cylinderDouble'
 
 /**
  * 單動氣缸（彈簧復歸）：A 有壓 → 伸出；A 排氣 → 彈簧推回；A 被封住 → 停在原處。
@@ -25,16 +26,18 @@ export const cylinderSingle = defineComponent<CylinderState>({
       step: 0.1,
       hint: '排氣不節流時彈簧推回全行程的秒數',
     },
+    SENSOR_PARAM,
   ],
   createState: () => ({ piston: 0 }),
   getInternalPaths: () => [],
+  getSignals: (state, params) => cylinderSignals(state.piston, params),
   update: ({ state, dt, ports, supplyFlow, ventFlow, params }) => {
     const a = ports.A ?? 'blocked'
     let delta = 0
     if (a === 'pressure') delta = (dt * (supplyFlow?.A ?? 1)) / numParam(params, 'strokeTime', CYLINDER_STROKE_SECONDS)
     else if (a === 'exhaust') delta = -(dt * (ventFlow?.A ?? 1)) / numParam(params, 'returnTime', CYLINDER_STROKE_SECONDS)
     if (delta === 0) return state
-    const piston = Math.min(1, Math.max(0, state.piston + delta))
+    const piston = clampPiston(state.piston + delta)
     return piston === state.piston ? state : { piston }
   },
 })

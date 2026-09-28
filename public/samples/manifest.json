@@ -6,6 +6,9 @@
       "modelCode": "DEMO-VALVE-52-01",
       "name": "範例 5/2 電磁閥（管接式 Rc1/8）",
       "category": "valve",
+      "pneumatic": {
+        "type": "valve52Single"
+      },
       "ports": [
         {
           "name": "A",
@@ -82,16 +85,16 @@
             0
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "valve52Single"
-      }
+      ]
     },
     {
       "file": "DEMO-FITTING-R18-D6.step",
       "modelCode": "DEMO-FITTING-R18-D6",
       "name": "範例直通快插接頭 R1/8 × Ø6",
       "category": "fitting",
+      "pneumatic": {
+        "type": "fitting"
+      },
       "ports": [
         {
           "name": "1",
@@ -123,16 +126,57 @@
             1
           ]
         }
-      ],
+      ]
+    },
+    {
+      "file": "DEMO-FITTING-R18-D4.step",
+      "modelCode": "DEMO-FITTING-R18-D4",
+      "name": "範例直通快插接頭 R1/8 × Ø4",
+      "category": "fitting",
       "pneumatic": {
         "type": "fitting"
-      }
+      },
+      "ports": [
+        {
+          "name": "1",
+          "spec": "R1/8",
+          "shape": "boss",
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            0,
+            -1
+          ]
+        },
+        {
+          "name": "2",
+          "spec": "Ø4 快插",
+          "shape": "hole",
+          "origin": [
+            0,
+            0,
+            25
+          ],
+          "axis": [
+            0,
+            0,
+            1
+          ]
+        }
+      ]
     },
     {
       "file": "DEMO-FITTING-NPT18-D6.step",
       "modelCode": "DEMO-FITTING-NPT18-D6",
       "name": "範例快插接頭 NPT1/8 × Ø6",
       "category": "fitting",
+      "pneumatic": {
+        "type": "fitting"
+      },
       "ports": [
         {
           "name": "1",
@@ -164,16 +208,19 @@
             1
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "fitting"
-      }
+      ]
     },
     {
       "file": "DEMO-SILENCER-R18.step",
       "modelCode": "DEMO-SILENCER-R18",
       "name": "範例消音器 R1/8",
       "category": "silencer",
+      "pneumatic": {
+        "type": "silencer",
+        "ports": {
+          "E": "1"
+        }
+      },
       "ports": [
         {
           "name": "1",
@@ -190,19 +237,20 @@
             -1
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "silencer",
-        "ports": {
-          "E": "1"
-        }
-      }
+      ]
     },
     {
       "file": "DEMO-CYL-16-50.step",
       "modelCode": "DEMO-CYL-16-50",
       "name": "範例氣缸 Ø16 × 50（M5）",
       "category": "cylinder",
+      "pneumatic": {
+        "type": "cylinderDouble",
+        "params": {
+          "bore": 16,
+          "stroke": 50
+        }
+      },
       "ports": [
         {
           "name": "A",
@@ -234,20 +282,20 @@
             1
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "cylinderDouble",
-        "params": {
-          "bore": 16,
-          "stroke": 50
-        }
-      }
+      ]
     },
     {
       "file": "DEMO-SC-M5-D4.step",
       "modelCode": "DEMO-SC-M5-D4",
       "name": "範例速度控制閥 M5 × Ø4",
       "category": "speedController",
+      "pneumatic": {
+        "type": "flowControl",
+        "ports": {
+          "1": "2",
+          "2": "1"
+        }
+      },
       "ports": [
         {
           "name": "1",
@@ -279,20 +327,16 @@
             1
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "flowControl",
-        "ports": {
-          "2": "1",
-          "1": "2"
-        }
-      }
+      ]
     },
     {
       "file": "DEMO-BUSH-R14-RC18.step",
       "modelCode": "DEMO-BUSH-R14-RC18",
       "name": "範例轉接頭 R1/4 × Rc1/8",
       "category": "fitting",
+      "pneumatic": {
+        "type": "fitting"
+      },
       "ports": [
         {
           "name": "1",
@@ -324,16 +368,16 @@
             1
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "fitting"
-      }
+      ]
     },
     {
       "file": "DEMO-MANIFOLD-4.step",
       "modelCode": "DEMO-MANIFOLD-4",
       "name": "範例集裝座 4 站（Rc1/8）",
       "category": "manifold",
+      "pneumatic": {
+        "type": "manifold"
+      },
       "ports": [
         {
           "name": "站1",
@@ -564,16 +608,16 @@
             0
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "manifold"
-      }
+      ]
     },
     {
       "file": "DEMO-VALVE-VB.step",
       "modelCode": "DEMO-VALVE-VB",
       "name": "範例底板式電磁閥（集裝座用）",
       "category": "valve",
+      "pneumatic": {
+        "type": "valve52Single"
+      },
       "ports": [
         {
           "name": "安裝面",
@@ -591,16 +635,16 @@
             -1
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "valve52Single"
-      }
+      ]
     },
     {
       "file": "DEMO-FRL-F40.step",
       "modelCode": "DEMO-FRL-F40",
       "name": "範例過濾器（模組式 40）",
       "category": "frl",
+      "pneumatic": {
+        "type": "filter"
+      },
       "ports": [
         {
           "name": "IN",
@@ -634,16 +678,19 @@
             0
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "filter"
-      }
+      ]
     },
     {
       "file": "DEMO-FRL-R40.step",
       "modelCode": "DEMO-FRL-R40",
       "name": "範例調壓閥（模組式 40）",
       "category": "frl",
+      "pneumatic": {
+        "type": "regulator",
+        "params": {
+          "setting": 0.5
+        }
+      },
       "ports": [
         {
           "name": "IN",
@@ -692,19 +739,16 @@
             0
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "regulator",
-        "params": {
-          "setting": 0.5
-        }
-      }
+      ]
     },
     {
       "file": "DEMO-FRL-PB40.step",
       "modelCode": "DEMO-FRL-PB40",
       "name": "範例 FRL 接管座 Rc1/4（模組式 40）",
       "category": "frl",
+      "pneumatic": {
+        "type": "fitting"
+      },
       "ports": [
         {
           "name": "管口",
@@ -737,10 +781,7 @@
             0
           ]
         }
-      ],
-      "pneumatic": {
-        "type": "fitting"
-      }
+      ]
     }
   ]
 }

@@ -1,9 +1,13 @@
 import { buildBom } from '../assembly/bom'
-import type { ProductMap } from '../assembly/moduleOps'
+import { tubeFrames, type ProductMap } from '../assembly/moduleOps'
+import { tubeBom, tubeControlPoints, tubeInnerDiameter, tubeLabelOf } from '../assembly/tubes'
 import type { Mat4, ModuleDoc } from '../assembly/types'
 import type { Tessellation } from '../catalog/tessellation'
 import { hasModel, productLabel } from '../catalog/types'
-import type { StepPart } from './stepAssembly'
+import type { StepPart, StepTube } from './stepAssembly'
+
+/** PU 管在 STEP 中的顏色（與 3D 畫面相同） */
+const TUBE_COLOR = '#38bdf8'
 
 const hex = (c: readonly number[]) =>
   `#${c
@@ -13,6 +17,8 @@ const hex = (c: readonly number[]) =>
 
 export interface StepPlan {
   parts: StepPart[]
+  /** PU 管：沿畫面上的曲線掃出的圓管 */
+  tubes: StepTube[]
   /** 要讀取的原始檔（sha256） */
   sources: string[]
   /** 不會寫入 STEP 的零件 */
@@ -22,6 +28,7 @@ export interface StepPlan {
 /**
  * 整理 STEP 組立檔的內容：每個零件實例一個實體，名稱為「項次_型號」（同一產品有多個時加 _1、_2…），
  * 顏色取模型本身的顏色。沒有 3D 檔或原始檔為 IGES 的零件略過。
+ * PU 管依零件表的項次命名「項次_PU 管 Ø6_1」。
  */
 export function collectStepParts(
   doc: ModuleDoc,
@@ -56,5 +63,23 @@ export function collectStepParts(
     parts.push({ name, source: product.source.sha256, matrix, color: color ? hex(color) : undefined })
     sources.add(product.source.sha256)
   }
-  return { parts, sources: [...sources], skipped }
+  const rows = buildBom(doc, products).length
+  const tubeItems = new Map(tubeBom(doc).map((t, i) => [t.label, rows + i + 1]))
+  const tubeCount = new Map<string, number>()
+  const tubes: StepTube[] = []
+  for (const tube of doc.tubes ?? []) {
+    const ends = tubeFrames(doc, products, tube, transforms)
+    if (!ends) continue
+    const label = tubeLabelOf(tube)
+    const k = (tubeCount.get(label) ?? 0) + 1
+    tubeCount.set(label, k)
+    tubes.push({
+      name: `${tubeItems.get(label) ?? 0}_PU 管 ${label}_${k}`,
+      points: tubeControlPoints(ends[0], ends[1]),
+      od: tube.od,
+      id: tubeInnerDiameter(tube.od),
+      color: TUBE_COLOR,
+    })
+  }
+  return { parts, tubes, sources: [...sources], skipped }
 }

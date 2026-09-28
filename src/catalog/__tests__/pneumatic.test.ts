@@ -96,9 +96,24 @@ describe('inferPneumatic', () => {
     ${'frl'}     | ${'空氣過濾器'}          | ${['IN', 'OUT']}            | ${'filter'}
     ${'fitting'} | ${'快插接頭'}            | ${['1', '2']}               | ${FITTING_TYPE}
     ${'manifold'} | ${'集裝座'}             | ${['P']}                    | ${MANIFOLD_TYPE}
+    ${'valve'}   | ${'5/2 單氣控閥'}        | ${['P', 'A', 'B', 'EA', 'EB', '14']} | ${'valve52Pilot'}
+    ${'valve'}   | ${'5/2 雙氣控閥'}        | ${['P', 'A', 'B', 'EA', 'EB', '14', '12']} | ${'valve52DoublePilot'}
+    ${'valve'}   | ${'3/2 滾輪閥'}          | ${['1', '2', '3']}          | ${'valve32Roller'}
+    ${'valve'}   | ${'3/2 氣控閥'}          | ${['1', '2', '3', '12']}    | ${'valve32Pilot'}
+    ${'valve'}   | ${'梭動閥'}              | ${['X', 'Y', 'A']}          | ${'shuttleValve'}
+    ${'valve'}   | ${'雙壓閥'}              | ${['1', '1', '2']}          | ${'twoPressureValve'}
+    ${'valve'}   | ${'快速排氣閥'}          | ${['1', '2', '3']}          | ${'quickExhaust'}
+    ${'valve'}   | ${'氣動延時閥'}          | ${['1', '2', '3', '12']}    | ${'valve32Timer'}
   `('$category「$name」→ $type', ({ category, name, ports, type }) => {
     const p = product(category, (ports as string[]).map((n) => port(n)), 'M', name)
     expect(inferPneumatic(p)?.type).toBe(type)
+  })
+
+  it('氣控閥的先導埠、梭動閥的兩個入口依名稱對應', () => {
+    const pilot = product('valve', ['P', 'A', 'B', 'EA', 'EB', 'Z'].map((n) => port(n)), 'M', '5/2 單氣控閥')
+    expect(inferPneumatic(pilot)?.portMap['14']).toBe('p_Z')
+    const shuttle = product('valve', ['IN1', 'IN2', 'OUT'].map((n) => port(n)), 'M', '梭動閥')
+    expect(inferPneumatic(shuttle)?.portMap).toEqual({ X: 'p_IN1', Y: 'p_IN2', A: 'p_OUT' })
   })
 
   it('分類為「其他」時不推斷', () => {
@@ -123,5 +138,15 @@ describe('effectivePneumatic', () => {
     expect(effectivePneumatic(p)).toMatchObject({ type: 'silencer', inferred: true })
     const set = { ...p, pneumatic: { type: 'exhaust', portMap: {} } }
     expect(effectivePneumatic(set)).toEqual({ type: 'exhaust', portMap: {}, inferred: false })
+  })
+})
+
+describe('pneumaticTypeOptions', () => {
+  it('每個可放進迴路圖的元件都在某個分組中（含訊號與邏輯）', async () => {
+    const { pneumaticTypeOptions } = await import('../pneumatic')
+    const { registry } = await import('../../engine')
+    const listed = new Set(pneumaticTypeOptions().flatMap((g) => g.options.map((o) => o.value)))
+    for (const d of registry.list()) if (!d.hidden && d.type !== 'airSupply') expect(listed.has(d.type), d.type).toBe(true)
+    expect(pneumaticTypeOptions().some((g) => g.group === '訊號與邏輯')).toBe(true)
   })
 })

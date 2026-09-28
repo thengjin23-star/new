@@ -18,6 +18,7 @@ import {
   RedoIcon,
   ResetIcon,
   RotateIcon,
+  SequenceIcon,
   TrashIcon,
   UndoIcon,
 } from './icons'
@@ -32,6 +33,7 @@ function ToolButton({
   label,
   primary,
   compact,
+  pressed,
 }: {
   onClick: () => void
   disabled?: boolean
@@ -41,6 +43,8 @@ function ToolButton({
   primary?: boolean
   /** 只在寬螢幕顯示文字 */
   compact?: boolean
+  /** 切換按鈕目前是否按下 */
+  pressed?: boolean
 }) {
   return (
     <button
@@ -49,9 +53,10 @@ function ToolButton({
       disabled={disabled}
       title={title ?? label}
       aria-label={label}
+      aria-pressed={pressed}
       className={[
         'flex h-9 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-35',
-        primary ? 'bg-blue-600 text-white hover:bg-blue-500' : 'text-slate-100 hover:bg-white/10',
+        primary ? 'bg-blue-600 text-white hover:bg-blue-500' : pressed ? 'bg-white/20 text-white' : 'text-slate-100 hover:bg-white/10',
       ].join(' ')}
     >
       {icon}
@@ -100,7 +105,9 @@ export function Toolbar() {
       replaceCircuit: st.replaceCircuit,
     })),
   )
-  const { openDialog, notify } = useCircuitUi(useShallow((u) => ({ openDialog: u.openDialog, notify: u.notify })))
+  const { openDialog, notify, sequenceOpen } = useCircuitUi(
+    useShallow((u) => ({ openDialog: u.openDialog, notify: u.notify, sequenceOpen: u.sequenceOpen })),
+  )
   const { fitView } = useReactFlow()
   const fileInput = useRef<HTMLInputElement>(null)
   const editing = s.status === 'idle'
@@ -170,13 +177,23 @@ export function Toolbar() {
           disabled: !editing,
           onSelect: () => {
             if (!confirmReplace('載入範例會取代目前未儲存的電路，確定嗎？')) return
-            const { nodes, edges } = ex.build()
-            s.replaceCircuit(nodes, edges)
+            const { nodes, edges, sequence } = ex.build()
+            s.replaceCircuit(nodes, edges, undefined, false, sequence)
             useCircuitStore.getState().setInfo({ name: `範例：${ex.name}` })
             useCircuitStore.setState({ dirty: false })
+            // 有程序的範例直接打開程序控制面板
+            if (sequence?.steps.length) useCircuitUi.getState().toggleSequence(true)
             fitSoon()
           },
         }))}
+      />
+
+      <ToolButton
+        onClick={() => useCircuitUi.getState().toggleSequence()}
+        icon={<SequenceIcon />}
+        label="程序"
+        title="程序控制：動作順序、自動／單步執行、位移－步驟圖"
+        pressed={sequenceOpen}
       />
 
       <Divider />

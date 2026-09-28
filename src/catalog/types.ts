@@ -75,6 +75,8 @@ export interface ProductPneumatic {
   type: string
   portMap: Record<string, string>
   params?: Record<string, ParamValue>
+  /** 氣缸的可動件（3D 模擬時沿 axis 移動「活塞位置 × 行程」）：網格零件的索引與伸出方向（產品座標） */
+  motion?: { parts: number[]; axis: Vec3 }
 }
 
 export interface Product {

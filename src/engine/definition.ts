@@ -1,4 +1,4 @@
-import type { Params, ParamValue, PortDef, PortState } from './types'
+import type { Params, ParamValue, PortDef, PortState, Signals } from './types'
 
 /**
  * 元件分類（元件面板依此分組）
@@ -6,9 +6,10 @@ import type { Params, ParamValue, PortDef, PortState } from './types'
  * - valve：方向控制閥
  * - flow：流量控制（單向閥、節流閥、速度控制閥）
  * - actuator：致動器
+ * - logic：訊號與邏輯（梭動閥、雙壓閥、延時閥、壓力開關）
  * - misc：其他（排氣口、消音器、塞頭）
  */
-export type ComponentCategory = 'source' | 'valve' | 'flow' | 'actuator' | 'misc'
+export type ComponentCategory = 'source' | 'valve' | 'flow' | 'logic' | 'actuator' | 'misc'
 
 /** 元件參數的定義（屬性面板依此產生表單） */
 export interface ParamDef {
@@ -25,6 +26,8 @@ export interface ParamDef {
   /** 模擬中可即時調整（例如節流開度、設定壓力） */
   live?: boolean
   hint?: string
+  /** 只在迴路圖設定（訊號名稱等），產品的氣動功能不列出 */
+  circuitOnly?: boolean
 }
 
 /**
@@ -57,6 +60,14 @@ export interface UpdateContext<S> {
   pressure?: Readonly<Record<string, number>>
   /** 已套用預設值的參數 */
   params?: Params
+  /** 本幀開始時的訊號（感測器與電氣輸出），例如電磁線圈依 Y1、滾輪閥依 a1 動作 */
+  signals?: Signals
+}
+
+/** 元件讀取自己的埠（產生訊號時用，例如壓力開關） */
+export interface PortReading {
+  ports: Readonly<Record<string, PortState>>
+  pressure: Readonly<Record<string, number>>
 }
 
 /**
@@ -101,6 +112,22 @@ export interface ComponentDefinition<S = unknown> {
 
   /** 使用者操作時的行為；有定義就代表此元件可互動 */
   onInteract?(state: S, action?: InteractAction, params?: Params): S
+
+  /**
+   * 依埠的壓力狀態決定的通路（梭動閥、雙壓閥、快速排氣閥）。solve 會反覆計算到穩定為止，
+   * 因此邏輯元件的輸出在同一幀內就正確，不會有一幀的誤動作。
+   * 第一次呼叫時還不知道埠狀態（ports 為空物件），請依 state（上一幀的狀態）決定。
+   */
+  portPaths?(ports: Readonly<Record<string, PortState>>, state: S, params?: Params): readonly InternalPath[]
+
+  /** 本元件產生的訊號（例如氣缸的 a0／a1、壓力開關） */
+  getSignals?(state: S, params: Params | undefined, reading: PortReading): Signals
+
+  /**
+   * 手動操作後，本元件帶動的電氣輸出：有命名的電磁線圈（例如 Y1）被點擊時，
+   * 切換的是輸出 Y1，所有接在 Y1 的線圈一起動作。
+   */
+  manualOutputs?(state: S, params?: Params): Signals
 
   /**
    * 每幀的物理更新。狀態沒有變化時應回傳原本的 state 物件，
