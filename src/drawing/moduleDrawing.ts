@@ -1,5 +1,6 @@
 import { buildBom } from '../assembly/bom'
-import { usedPorts, type ProductMap } from '../assembly/moduleOps'
+import { tubeFrames, usedPorts, type ProductMap } from '../assembly/moduleOps'
+import { formatMeters, tubeBom, tubeControlPoints, tubeLabelOf, tubeMesh } from '../assembly/tubes'
 import type { DrawingInfo, FrontSide, Mat4, ModuleDoc } from '../assembly/types'
 import type { Tessellation } from '../catalog/tessellation'
 import { productLabel } from '../catalog/types'
@@ -56,6 +57,8 @@ export interface ModuleDrawingSource {
   withoutModel: string[]
 }
 
+const IDENTITY_MATRIX = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+
 const transformPoint = (m: Mat4, p: Vec3): Vec3 => [
   m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
   m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
@@ -109,10 +112,22 @@ export function collectModuleDrawing(
       })
     }
   }
+  // PU 管：依兩端埠的位置產生圓管網格，一起投影（零件表項次接在產品之後）
+  const tubeItems = new Map(tubeBom(doc).map((t, i) => [t.label, rows.length + i + 1]))
+  for (const tube of doc.tubes ?? []) {
+    const ends = tubeFrames(doc, products, tube, transforms)
+    if (!ends) continue
+    const key = `tube:${tube.id}:${JSON.stringify(ends)}:${tube.od}`
+    geometries.set(key, tubeMesh(tubeControlPoints(ends[0], ends[1]), tube.od / 2))
+    instances.push({ key, matrix: IDENTITY_MATRIX, item: tubeItems.get(tubeLabelOf(tube)) ?? 0 })
+  }
   return {
     instances,
     geometry: (key) => geometries.get(key),
-    bom: rows.map((r) => ({ item: r.index, modelCode: r.product.modelCode, name: r.product.name, maker: r.product.maker, quantity: r.quantity })),
+    bom: [
+      ...rows.map((r) => ({ item: r.index, modelCode: r.product.modelCode, name: r.product.name, maker: r.product.maker, quantity: r.quantity })),
+      ...tubeBom(doc).map((t, i) => ({ item: rows.length + i + 1, modelCode: `PU 管 ${t.label}`, name: `PU 管（${t.count} 條）`, quantity: formatMeters(t.length) })),
+    ],
     ports,
     withoutModel: [...withoutModel],
   }

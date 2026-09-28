@@ -4,7 +4,7 @@
  * 零件形狀為簡化的示意模型，但埠的尺寸貼近實物（例如 Rc1/8 孔 Ø8.6、R1/8 凸柱 Ø9.73），
  * 埠的位置與方向由同一組參數算出，因此 manifest 裡預先定義的埠一定與模型吻合。
  *
- * 用法：node scripts/make-sample-parts.mjs
+ * 用法：node scripts/make-sample-parts.mjs [--only=新零件.step]
  * （需要 devDependencies 中的 replicad 與 replicad-opencascadejs）
  */
 import { writeFileSync } from 'node:fs'
@@ -93,6 +93,22 @@ function straightFitting(bossD, bossLen, hexAf, hexH, bodyD, socketD) {
     [
       { name: '1', spec: 'R1/8', shape: 'boss', origin: [0, 0, 0], axis: [0, 0, -1] },
       { name: '2', spec: 'Ø6 快插', shape: 'hole', origin: [0, 0, f.top - 3], axis: [0, 0, 1] },
+    ],
+  )
+}
+{
+  // Ø4：接速度控制閥（M5 × Ø4）用
+  const f = straightFitting(BOSS.r18, 7, 14, 7, 10, 4)
+  part(
+    'DEMO-FITTING-R18-D4.step',
+    { modelCode: 'DEMO-FITTING-R18-D4', name: '範例直通快插接頭 R1/8 × Ø4', category: 'fitting', pneumatic: { type: 'fitting' } },
+    [
+      [f.shape, 'BODY', METAL],
+      [f.sleeve, 'RELEASE-SLEEVE', BLUE],
+    ],
+    [
+      { name: '1', spec: 'R1/8', shape: 'boss', origin: [0, 0, 0], axis: [0, 0, -1] },
+      { name: '2', spec: 'Ø4 快插', shape: 'hole', origin: [0, 0, f.top - 3], axis: [0, 0, 1] },
     ],
   )
 }
@@ -279,7 +295,10 @@ const frlSides = [
 }
 
 // ---------- 輸出 ----------
+// --only=檔名,檔名：只寫出指定的 STEP 檔（STEP 檔頭含時間，重寫會改變既有範例的 sha256）
+const only = process.argv.find((a) => a.startsWith('--only='))?.slice(7).split(',')
 for (const p of parts) {
+  if (only && !only.includes(p.file)) continue
   writeFileSync(join(outDir, p.file), Buffer.from(await p.blob.arrayBuffer()))
 }
 const manifest = { version: 1, parts: parts.map((p) => p.meta) }

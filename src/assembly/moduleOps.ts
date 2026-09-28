@@ -2,8 +2,10 @@ import { Matrix4 } from 'three'
 import type { Product, ProductPort } from '../catalog/types'
 import { checkMate, specKey, type MateResult } from '../threads'
 import { newId } from '../utils/id'
-import { fromMatrix, mateTransform, toMatrix } from './frames'
-import type { Mat4, Mate, ModuleDoc, PortRef } from './types'
+import type { Vec3 } from '../geometry/vec3'
+import { fromMatrix, mateTransform, toMatrix, worldFrame } from './frames'
+import { tubeCheck, TUBE_ERROR_TEXT, type TubeError } from './tubes'
+import type { Mat4, Mate, ModuleDoc, ModuleSupply, ModuleTube, PortRef } from './types'
 
 export type ProductMap = Readonly<Record<string, Product>>
 
@@ -39,9 +41,27 @@ export function groupOf(doc: ModuleDoc, instance: string): Set<string> {
   return group
 }
 
-/** 已經被鎖合使用的埠（instance:port） */
+/** 已經被鎖合或 PU 管使用的埠（instance:port） */
 export function usedPorts(doc: ModuleDoc): Set<string> {
-  return new Set(doc.mates.flatMap((m) => [`${m.parent.instance}:${m.parent.port}`, `${m.child.instance}:${m.child.port}`]))
+  return new Set([
+    ...doc.mates.flatMap((m) => [`${m.parent.instance}:${m.parent.port}`, `${m.child.instance}:${m.child.port}`]),
+    ...(doc.tubes ?? []).flatMap((t) => [`${t.a.instance}:${t.a.port}`, `${t.b.instance}:${t.b.port}`]),
+  ])
+}
+
+/** PU 管兩端埠在模組座標中的位置與朝外的軸向；零件或埠已不存在時回傳 undefined */
+export function tubeFrames(
+  doc: ModuleDoc,
+  products: ProductMap,
+  tube: Pick<ModuleTube, 'a' | 'b'>,
+  transforms: Readonly<Record<string, Mat4>>,
+): [{ origin: Vec3; axis: Vec3 }, { origin: Vec3; axis: Vec3 }] | undefined {
+  const [a, b] = [tube.a, tube.b].map((ref) => {
+    const port = getPort(doc, products, ref)
+    const world = transforms[ref.instance]
+    return port && world ? worldFrame(world, port.frame) : undefined
+  })
+  return a && b ? [a, b] : undefined
 }
 
 export interface TransformResult {
@@ -103,7 +123,53 @@ export function removeInstance(doc: ModuleDoc, products: ProductMap, instance: s
     instances: doc.instances.filter((i) => i.id !== instance),
     mates: doc.mates.filter((m) => m.parent.instance !== instance && m.child.instance !== instance),
     placements,
+    tubes: doc.tubes?.filter((t) => t.a.instance !== instance && t.b.instance !== instance),
+    supply: doc.supply?.instance === instance ? undefined : doc.supply,
   })
+}
+
+// ---------------------------------------------------------------------------------------------
+// PU 管
+
+export type AddTubeError = TubeError | 'port-in-use' | 'missing-port'
+
+export const ADD_TUBE_ERROR_TEXT: Record<AddTubeError, string> = {
+  ...TUBE_ERROR_TEXT,
+  'port-in-use': '這個埠已經接了零件或管子',
+  'missing-port': '找不到這個埠',
+}
+
+/** 在兩個快插接頭之間接一條 PU 管 */
+export function addTube(
+  doc: ModuleDoc,
+  products: ProductMap,
+  a: PortRef,
+  b: PortRef,
+  length?: number,
+): { doc: ModuleDoc; tubeId: string } | { error: AddTubeError } {
+  if (a.instance === b.instance && a.port === b.port) return { error: 'same-port' }
+  const pa = getPort(doc, products, a)
+  const pb = getPort(doc, products, b)
+  if (!pa || !pb) return { error: 'missing-port' }
+  const used = usedPorts(doc)
+  if (used.has(`${a.instance}:${a.port}`) || used.has(`${b.instance}:${b.port}`)) return { error: 'port-in-use' }
+  const check = tubeCheck(pa, pb)
+  if (!check.ok) return { error: check.error }
+  const tube: ModuleTube = { id: newId('t'), a, b, od: check.od, label: check.label, ...(length !== undefined && { length }) }
+  return { tubeId: tube.id, doc: touch(doc, { tubes: [...(doc.tubes ?? []), tube] }) }
+}
+
+export function removeTube(doc: ModuleDoc, tubeId: string): ModuleDoc {
+  return touch(doc, { tubes: (doc.tubes ?? []).filter((t) => t.id !== tubeId) })
+}
+
+export function updateTube(doc: ModuleDoc, tubeId: string, patch: Partial<Pick<ModuleTube, 'length'>>): ModuleDoc {
+  return touch(doc, { tubes: (doc.tubes ?? []).map((t) => (t.id === tubeId ? { ...t, ...patch } : t)) })
+}
+
+/** 設定（或取消）模擬用的供氣口 */
+export function setSupply(doc: ModuleDoc, supply: ModuleSupply | undefined): ModuleDoc {
+  return touch(doc, { supply })
 }
 
 /**
@@ -259,11 +325,35 @@ export function replaceProduct(doc: ModuleDoc, products: ProductMap, instanceId:
     dropped.push(oldProduct.ports.find((p) => p.id === self.port)?.name ?? self.port)
     placements[m.child.instance] = transforms[m.child.instance]
   }
+  // PU 管與供氣口：依名稱、規格對應到新產品的埠，找不到就拿掉
+  const remapFree = (portId: string): string | undefined => {
+    const old = oldProduct.ports.find((p) => p.id === portId)
+    if (!old) return undefined
+    const free = newProduct.ports.filter((p) => !taken.has(p.id))
+    const hit = free.find((p) => p.name === old.name) ?? (old.spec ? free.find((p) => p.spec && specKey(p.spec) === specKey(old.spec!)) : undefined)
+    if (hit) taken.add(hit.id)
+    return hit?.id
+  }
+  const tubes = (doc.tubes ?? []).flatMap((t) => {
+    const ends = [t.a, t.b].map((end) => (end.instance === instanceId ? { ...end, port: remapFree(end.port) } : end))
+    if (ends.some((e) => !e.port)) {
+      dropped.push(`PU 管 ${t.label ?? ''}`.trim())
+      return []
+    }
+    return [{ ...t, a: ends[0] as PortRef, b: ends[1] as PortRef }]
+  })
+  let supply = doc.supply
+  if (supply?.instance === instanceId) {
+    const port = remapFree(supply.port)
+    supply = port ? { ...supply, port } : undefined
+  }
   return {
     doc: touch(doc, {
       instances: doc.instances.map((i) => (i.id === instanceId ? { ...i, productId: newProductId } : i)),
       mates,
       placements,
+      ...(doc.tubes && { tubes }),
+      supply,
     }),
     kept: mates.length - doc.mates.filter((m) => m.parent.instance !== instanceId && m.child.instance !== instanceId).length,
     dropped,

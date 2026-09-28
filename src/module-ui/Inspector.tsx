@@ -10,7 +10,12 @@ import { PneumaticFunctionDialog } from '../components/PneumaticFunctionEditor'
 import { SymbolPreview } from '../components/SymbolPreview'
 import { formatSpec, type MateLevel } from '../threads'
 import { portLabel } from './labels'
-import { useModuleStore } from './moduleStore'
+import { tubeFrames, useModuleStore } from './moduleStore'
+import { cylinderMotion } from './simulation'
+import { deriveModuleCircuit } from '../assembly/moduleCircuit'
+import { registry } from '../engine'
+import type { Vec3 } from '../geometry/vec3'
+import { bezierLength, estimateTubeLength, formatMeters, tubeBom, tubeControlPoints } from '../assembly/tubes'
 import { LEVEL_COLOR } from '../components/levels'
 import { Button, Dialog, Empty, LevelBadge } from '../components/ui'
 
@@ -64,6 +69,9 @@ export function Inspector() {
 
 function PartTab() {
   const selected = useModuleStore((s) => s.selected)
+  const selectedTube = useModuleStore((s) => s.selectedTube)
+  // 長度改變（例如復原）時重新載入輸入框
+  const tubeLength = useModuleStore((s) => s.doc.tubes?.find((t) => t.id === s.selectedTube)?.length)
   const doc = useModuleStore((s) => s.doc)
   const products = useModuleStore((s) => s.products)
   const mode = useModuleStore((s) => s.mode)
@@ -71,6 +79,7 @@ function PartTab() {
   const removeSelected = useModuleStore((s) => s.removeSelected)
   const inst = doc.instances.find((i) => i.id === selected)
   const product = inst && products[inst.productId]
+  if (selectedTube) return <TubePanel key={`${selectedTube}:${tubeLength ?? ''}`} tubeId={selectedTube} />
   if (!inst || !product) {
     return (
       <Empty>
@@ -84,6 +93,7 @@ function PartTab() {
     <div className="space-y-4 p-3">
       <ProductForm key={product.id} product={product} />
       <PneumaticSection product={product} />
+      <MotionSection product={product} />
       <section>
         <header className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-700">埠（{product.ports.length}）</h3>
@@ -331,15 +341,83 @@ function PneumaticSection({ product }: { product: Product }) {
   )
 }
 
+const AXES: { label: string; axis: Vec3 }[] = [
+  { label: '+X', axis: [1, 0, 0] },
+  { label: '−X', axis: [-1, 0, 0] },
+  { label: '+Y', axis: [0, 1, 0] },
+  { label: '−Y', axis: [0, -1, 0] },
+  { label: '+Z', axis: [0, 0, 1] },
+  { label: '−Z', axis: [0, 0, -1] },
+]
+
+/** 氣缸的可動件：3D 模擬時沿伸出方向移動（沒有設定時依零件名稱 ROD、PISTON… 自動判斷） */
+function MotionSection({ product }: { product: Product }) {
+  const mesh = useModuleStore((s) => s.meshes[product.source.sha256])
+  const updateProduct = useModuleStore((s) => s.updateProduct)
+  const pn = effectivePneumatic(product)
+  const motion = useMemo(() => cylinderMotion(product, mesh), [product, mesh])
+  if (!pn || !isCircuitType(pn.type) || registry.get(pn.type).category !== 'actuator' || !mesh || mesh.parts.length < 2) return null
+  const explicit = !!pn.motion?.parts.length
+  const save = (parts: number[], axis: Vec3) => {
+    const { inferred: _inferred, ...base } = pn
+    void updateProduct({ ...product, pneumatic: { ...base, motion: parts.length ? { parts, axis } : undefined } })
+  }
+  const parts = [...(motion?.parts ?? [])]
+  const axis = motion?.axis ?? [1, 0, 0]
+  const axisLabel = AXES.find((a) => a.axis.every((v, i) => v === axis[i]))?.label ?? '+X'
+  return (
+    <section className="rounded-md border border-slate-200 p-2">
+      <h3 className="text-sm font-semibold text-slate-700">模擬時移動的零件</h3>
+      <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
+        {explicit ? '已設定。' : motion ? '依零件名稱自動判斷，可修改。' : '勾選活塞桿等可動件，3D 模擬時會沿伸出方向移動。'}
+      </p>
+      <ul className="mt-1.5 space-y-0.5 text-xs">
+        {mesh.parts.map((part, i) => (
+          <li key={i}>
+            <label className="flex items-center gap-2 text-slate-700">
+              <input
+                type="checkbox"
+                checked={parts.includes(i)}
+                onChange={(e) => save(e.target.checked ? [...parts, i] : parts.filter((k) => k !== i), axis)}
+              />
+              {part.name || `零件 ${i + 1}`}
+            </label>
+          </li>
+        ))}
+      </ul>
+      <label className="mt-1.5 flex items-center gap-2 text-xs text-slate-500">
+        伸出方向
+        <select
+          value={axisLabel}
+          disabled={!parts.length}
+          onChange={(e) => save(parts, AXES.find((a) => a.label === e.target.value)!.axis)}
+          className="h-7 rounded border border-slate-300 bg-white px-1 text-slate-800"
+        >
+          {AXES.map((a) => (
+            <option key={a.label}>{a.label}</option>
+          ))}
+        </select>
+        <span className="text-slate-400">（產品座標）</span>
+      </label>
+    </section>
+  )
+}
+
 function PortRow({ instanceId, product, portId }: { instanceId: string; product: Product; portId: string }) {
   const doc = useModuleStore((s) => s.doc)
   const products = useModuleStore((s) => s.products)
   const editPort = useModuleStore((s) => s.editPort)
   const clickPort = useModuleStore((s) => s.clickPort)
   const connectFrom = useModuleStore((s) => s.connectFrom)
+  const setSupply = useModuleStore((s) => s.setSupply)
+  const selectTube = useModuleStore((s) => s.selectTube)
   const port = product.ports.find((p) => p.id === portId)!
-  const mate = doc.mates.find((m) => [m.parent, m.child].some((r) => r.instance === instanceId && r.port === portId))
-  const other = mate && (mate.parent.instance === instanceId && mate.parent.port === portId ? mate.child : mate.parent)
+  const is = (r: { instance: string; port: string }) => r.instance === instanceId && r.port === portId
+  const mate = doc.mates.find((m) => is(m.parent) || is(m.child))
+  const other = mate && (is(mate.parent) ? mate.child : mate.parent)
+  const tube = doc.tubes?.find((t) => is(t.a) || is(t.b))
+  const tubeOther = tube && (is(tube.a) ? tube.b : tube.a)
+  const isSupply = !!doc.supply && is(doc.supply)
   const isFrom = connectFrom?.instance === instanceId && connectFrom.port === portId
   return (
     <li className={`rounded-md border p-2 ${isFrom ? 'border-blue-400 bg-blue-50' : 'border-slate-200'}`}>
@@ -352,9 +430,22 @@ function PortRow({ instanceId, product, portId }: { instanceId: string; product:
         )}
       </div>
       <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-        <span className="truncate">{other ? `已接：${portLabel(doc, products, other)}` : '未連接'}</span>
+        {tubeOther ? (
+          <button type="button" className="truncate text-left text-sky-700 hover:underline" onClick={() => selectTube(tube!.id)}>
+            PU 管 {tube!.label}：{portLabel(doc, products, tubeOther)}
+          </button>
+        ) : (
+          <span className={`truncate ${isSupply ? 'font-medium text-red-700' : ''}`}>
+            {other ? `已接：${portLabel(doc, products, other)}` : isSupply ? '供氣口（模擬時由這裡供氣）' : '未連接'}
+          </span>
+        )}
         <span className="flex shrink-0 gap-1">
-          {!mate && (
+          {!mate && !tube && port.spec?.kind !== 'interface' && (
+            <Button size="sm" variant="ghost" onClick={() => setSupply(isSupply ? undefined : { instance: instanceId, port: portId })} title="模擬時由這個埠供氣">
+              {isSupply ? '取消供氣' : '設為供氣口'}
+            </Button>
+          )}
+          {!mate && !tube && (
             <Button size="sm" variant="ghost" onClick={() => clickPort({ instance: instanceId, port: portId })}>
               {isFrom ? '取消' : '連接'}
             </Button>
@@ -365,6 +456,69 @@ function PortRow({ instanceId, product, portId }: { instanceId: string; product:
         </span>
       </div>
     </li>
+  )
+}
+
+/** 選取的 PU 管：兩端、管徑、長度（可修改）、刪除 */
+function TubePanel({ tubeId }: { tubeId: string }) {
+  const doc = useModuleStore((s) => s.doc)
+  const products = useModuleStore((s) => s.products)
+  const { setTubeLength, deleteTube, select } = useModuleStore.getState()
+  const tube = doc.tubes?.find((t) => t.id === tubeId)
+  const estimate = useMemo(() => {
+    const frames = tube && tubeFrames(doc, products, tube)
+    return frames && tube ? estimateTubeLength(bezierLength(tubeControlPoints(frames[0], frames[1])), tube.od) : undefined
+  }, [doc, products, tube])
+  const [text, setText] = useState(tube?.length !== undefined ? String(tube.length) : '')
+  if (!tube) return <Empty>這條 PU 管已經刪除。</Empty>
+  const commitLength = () => {
+    const v = text.trim() === '' ? undefined : Number(text)
+    if (v !== undefined && !(v > 0)) {
+      setText(tube.length !== undefined ? String(tube.length) : '')
+      return
+    }
+    if (v !== tube.length) setTubeLength(tube.id, v)
+  }
+  return (
+    <div className="space-y-3 p-3 text-sm">
+      <h3 className="font-semibold text-slate-800">PU 管 {tube.label}</h3>
+      <ul className="space-y-1 text-xs">
+        {[tube.a, tube.b].map((end) => (
+          <li key={`${end.instance}:${end.port}`}>
+            <button type="button" className="text-left text-slate-700 hover:underline" onClick={() => select(end.instance)}>
+              {portLabel(doc, products, end)}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <label className="block text-xs text-slate-500">
+        裁切長度（mm）
+        <input
+          value={text}
+          inputMode="numeric"
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commitLength}
+          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+          className="mt-0.5 h-8 w-full rounded-md border border-slate-300 px-2 text-sm text-slate-800"
+          aria-label="PU 管長度"
+        />
+      </label>
+      {estimate !== undefined && (
+        <Button
+          size="sm"
+          onClick={() => {
+            setText(String(estimate))
+            setTubeLength(tube.id, estimate)
+          }}
+        >
+          依目前位置重新估算（{estimate} mm）
+        </Button>
+      )}
+      <p className="text-[11px] leading-4 text-slate-400">建議長度＝兩端之間的彎曲長度＋插入快插接頭的長度，進位到 10 mm。BOM 依管徑合計總長。</p>
+      <Button size="sm" variant="danger" onClick={() => deleteTube(tube.id)}>
+        刪除這條管
+      </Button>
+    </div>
   )
 }
 
@@ -382,12 +536,33 @@ function CheckTab() {
     () => mateChecks(doc, products).sort((a, b) => ORDER.indexOf(a.result.level) - ORDER.indexOf(b.result.level)),
     [doc, products],
   )
-  if (checks.length === 0) {
+  const pneumatic = useMemo(() => deriveModuleCircuit(doc, products).warnings, [doc, products])
+  if (checks.length === 0 && doc.instances.length === 0) {
     return <Empty>還沒有連接。點選一個零件的埠，再點選另一個零件的埠，就會檢查螺紋並鎖合。</Empty>
   }
   const count = (level: MateLevel) => checks.filter((c) => c.result.level === level).length
   return (
     <div className="space-y-3 p-3">
+      {pneumatic.length > 0 && (
+        <section aria-label="氣路檢查">
+          <h3 className="mb-1 text-xs font-semibold text-slate-600">氣路（3D 模擬、產生迴路圖用）</h3>
+          <ul className="space-y-1">
+            {pneumatic.map((w, i) => (
+              <li key={i}>
+                <button
+                  type="button"
+                  disabled={!w.instance}
+                  onClick={() => w.instance && select(w.instance)}
+                  className={`w-full rounded px-2 py-1 text-left text-xs leading-4 ${w.kind === 'no-supply' || w.kind === 'unmounted-valve' ? 'bg-red-50 text-red-700' : w.kind === 'open-port' ? 'bg-slate-50 text-slate-600' : 'bg-amber-50 text-amber-800'} ${w.instance ? 'hover:underline' : ''}`}
+                >
+                  {w.text}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {checks.length === 0 && <p className="text-xs text-slate-500">還沒有鎖合。</p>}
       <div className="flex flex-wrap gap-2 text-xs">
         {ORDER.map((l) => count(l) > 0 && (
           <span key={l} className="flex items-center gap-1">
@@ -443,6 +618,7 @@ function BomTab() {
   const products = useModuleStore((s) => s.products)
   const downloadBomCsv = useModuleStore((s) => s.downloadBomCsv)
   const rows = useMemo(() => buildBom(doc, products), [doc, products])
+  const tubes = useMemo(() => tubeBom(doc), [doc])
   if (rows.length === 0) return <Empty>模組中還沒有零件。</Empty>
   const cols = bomColumns(rows.map((r) => r.product))
   const total = bomTotal(rows.map((r) => ({ price: r.product.price, quantity: r.quantity })))
@@ -473,6 +649,17 @@ function BomTab() {
                   {r.product.price !== undefined ? formatMoney(r.product.price * r.quantity) : '—'}
                 </td>
               )}
+            </tr>
+          ))}
+          {tubes.map((t, i) => (
+            <tr key={t.label} className="border-b border-slate-100 align-top" data-tube-row={t.label}>
+              <td className="py-1 pr-1 text-slate-500">{rows.length + i + 1}</td>
+              <td className="py-1 pr-1">
+                <div className="font-medium text-slate-800">PU 管 {t.label}</div>
+                <div className="text-slate-500">{t.count} 條</div>
+              </td>
+              <td className="py-1 text-right font-semibold whitespace-nowrap">{formatMeters(t.length)}</td>
+              {cols.price && <td className="py-1 pl-1 text-right text-slate-400">—</td>}
             </tr>
           ))}
         </tbody>

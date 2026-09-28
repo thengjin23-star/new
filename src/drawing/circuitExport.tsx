@@ -50,6 +50,7 @@ export function circuitSheetInput(nodes: readonly CircuitFlowNode[], edges: read
       ports: symbol.ports,
       tag: n.data.tag,
       modelCode: n.data.product?.modelCode,
+      labelSide: n.data.labelSide,
     })
   }
   return {

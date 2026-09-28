@@ -41,6 +41,7 @@ export interface CircuitSheetNode {
   ports: Readonly<Record<string, { x: number; y: number; side: Side }>>
   tag?: string
   modelCode?: string
+  labelSide?: Side
 }
 
 export interface CircuitSheetInput {
@@ -140,7 +141,7 @@ function circuitPrimitives(input: CircuitSheetInput): { primitives: Primitive[];
     // 標號貼著實際畫出的符號（5/3 閥的節點外框含閥位移動的空間，比符號寬很多）
     const box = drawnBox(symbol) ?? outerBox(n)
     const used = new Set(Object.values(n.ports).map((g) => rotateSide(flipSide(g.side, n.flip), n.rotation)))
-    const side = LABEL_ORDER.find((s) => !used.has(s)) ?? 'left'
+    const side = n.labelSide ?? LABEL_ORDER.find((s) => !used.has(s)) ?? 'left'
     const size = [11, 10]
     const lineH = 14
     const total = lines.length * lineH

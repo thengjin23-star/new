@@ -273,6 +273,11 @@ async function importModule(
   const mates = module.mates
     .filter((m) => kept.has(m.parent.instance) && kept.has(m.child.instance))
     .map((m) => ({ ...m, parent: remap(m.parent), child: remap(m.child) }))
+  // PU 管與供氣口也引用埠：同樣換成合併後產品的埠 id
+  const tubes = module.tubes
+    ?.filter((t) => kept.has(t.a.instance) && kept.has(t.b.instance))
+    .map((t) => ({ ...t, a: remap(t.a), b: remap(t.b) }))
+  const supply = module.supply && kept.has(module.supply.instance) ? { ...module.supply, ...remap(module.supply) } : undefined
 
   const exists = mode === 'copy' && (await store.getModule(module.id))
   const id = exists ? newId('mod') : module.id
@@ -282,6 +287,8 @@ async function importModule(
     name: exists ? `${module.name}（匯入）` : module.name,
     instances,
     mates,
+    ...(tubes && { tubes }),
+    supply,
     placements: Object.fromEntries(Object.entries(module.placements).filter(([k]) => kept.has(k))),
     updatedAt: mode === 'restore' ? module.updatedAt : Date.now(),
   })

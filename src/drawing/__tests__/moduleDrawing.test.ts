@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { addInstance, computeTransforms, connect, createModule, type ProductMap } from '../../assembly/moduleOps'
+import { addInstance, addTube, computeTransforms, connect, createModule, type ProductMap } from '../../assembly/moduleOps'
 import type { ModuleDoc } from '../../assembly/types'
 import { portsFromDefs, type SampleManifest } from '../../catalog/samples'
 import type { Tessellation } from '../../catalog/tessellation'
@@ -131,5 +131,26 @@ describe('collectStepParts', () => {
       { name: 'DEMO-SILENCER-R18', reason: 'IGES 檔無法寫入 STEP 組立檔' },
       { name: 'DEMO-CYL-16-50', reason: '沒有 3D 檔' },
     ])
+    expect(plan.tubes).toEqual([])
+  })
+
+  it('PU 管依零件表項次命名，沿兩端快插口的曲線掃出', () => {
+    let doc = moduleWithFittings()
+    const [f1, f2] = doc.instances.filter((i) => i.productId === 'DEMO-FITTING-R18-D6').map((i) => i.id)
+    const socket = PRODUCTS['DEMO-FITTING-R18-D6'].ports.find((p) => p.name === '2')!.id
+    const r = addTube(doc, PRODUCTS, { instance: f1, port: socket }, { instance: f2, port: socket })
+    if ('error' in r) throw new Error(r.error)
+    doc = r.doc
+    const { transforms } = computeTransforms(doc, PRODUCTS)
+    const plan = collectStepParts(doc, PRODUCTS, MESHES, transforms)
+    expect(plan.tubes).toHaveLength(1)
+    const [tube] = plan.tubes
+    // 產品 4 列之後：第 5 項
+    expect(tube).toMatchObject({ name: '5_PU 管 Ø6_1', od: 6, id: 4, color: '#38bdf8' })
+    // 起點在接頭的快插口，第 2 個控制點沿埠的軸向（朝上）拉出
+    expect(tube.points[0][2]).toBeGreaterThan(34)
+    expect(tube.points[1][0]).toBeCloseTo(tube.points[0][0], 6)
+    expect(tube.points[1][2]).toBeGreaterThan(tube.points[0][2])
+    expect(tube.points[3][2]).toBeCloseTo(tube.points[0][2], 6)
   })
 })

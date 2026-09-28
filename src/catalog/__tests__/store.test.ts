@@ -58,10 +58,10 @@ describe('匯入 CAD 檔（以 SHA-256 認出同一個檔案）', () => {
 })
 
 describe('範例零件庫', () => {
-  it('安裝 12 個範例，每個埠的規格都能解析', async () => {
+  it('安裝 13 個範例，每個埠的規格都能解析', async () => {
     const store = await withSamples()
     const products = await store.listProducts()
-    expect(products).toHaveLength(12)
+    expect(products).toHaveLength(13)
     const valve = await byModel(store, 'DEMO-VALVE-52-01')
     expect(valve.ports.map((p) => `${p.name}:${formatSpec(p.spec!)}`)).toEqual([
       'A:Rc1/8 母（PT）',
@@ -91,7 +91,7 @@ describe('範例零件庫', () => {
     const edited = { ...silencer, ports: [{ ...silencer.ports[0], name: '我改過的名稱' }] }
     await store.putProduct(edited)
     const r = await installSamples(store, sampleManifest(), readSample, nodeParser)
-    expect(r).toEqual({ added: 0, existing: 12 })
+    expect(r).toEqual({ added: 0, existing: 13 })
     expect((await store.getProduct(silencer.id))?.ports[0].name).toBe('我改過的名稱')
   })
 })
@@ -102,7 +102,7 @@ describe('產品庫與模組的匯出／匯入', () => {
     const archive = await exportLibraryArchive(a)
     const b = await open()
     const report = await importArchive(b, archive)
-    expect(report).toMatchObject({ kind: 'library', productsAdded: 12, productsMerged: 0, conflicts: [] })
+    expect(report).toMatchObject({ kind: 'library', productsAdded: 13, productsMerged: 0, conflicts: [] })
     const [pa, pb] = [await a.listProducts(), await b.listProducts()]
     const sort = (list: typeof pa) => [...list].sort((x, y) => x.id.localeCompare(y.id))
     expect(sort(pb)).toEqual(sort(pa))
@@ -117,8 +117,8 @@ describe('產品庫與模組的匯出／匯入', () => {
     const b = await open()
     await importArchive(b, archive)
     const again = await importArchive(b, archive)
-    expect(again).toMatchObject({ productsAdded: 0, productsMerged: 12, portsAdded: 0, conflicts: [] })
-    expect(await b.listProducts()).toHaveLength(12)
+    expect(again).toMatchObject({ productsAdded: 0, productsMerged: 13, portsAdded: 0, conflicts: [] })
+    expect(await b.listProducts()).toHaveLength(13)
   })
 
   it('本機與匯入檔規格不同時保留本機並列出差異；本機未設定的規格會補上', async () => {
@@ -156,6 +156,8 @@ describe('產品庫與模組的匯出／匯入', () => {
       ],
       mates: [{ id: 'm1', parent: { instance: 'i1', port: valve.ports[0].id }, child: { instance: 'i2', port: fitting.ports[0].id }, angle: 0 }],
       placements: { i1: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+      tubes: [{ id: 't1', a: { instance: 'i2', port: fitting.ports[1].id }, b: { instance: 'i2', port: fitting.ports[1].id }, od: 6, label: 'Ø6', length: 250 }],
+      supply: { instance: 'i1', port: valve.ports[3].id, pressure: 0.5 },
       createdAt: now,
       updatedAt: now,
     })
@@ -167,6 +169,9 @@ describe('產品庫與模組的匯出／匯入', () => {
     const imported = await c.getModule('mod_1')
     expect(imported?.instances.map((i) => i.productId).sort()).toEqual([valve.id, fitting.id].sort())
     expect(imported?.mates[0].parent.port).toBe(valve.ports[0].id)
+    // PU 管與供氣口一起帶過來
+    expect(imported?.tubes).toEqual([expect.objectContaining({ id: 't1', od: 6, length: 250, a: { instance: 'i2', port: fitting.ports[1].id } })])
+    expect(imported?.supply).toEqual({ instance: 'i1', port: valve.ports[3].id, pressure: 0.5 })
 
     const second = await importArchive(c, archive)
     expect(second.moduleId).not.toBe('mod_1')
@@ -241,7 +246,7 @@ describe('完整備份（.pbak）', () => {
     const backup = await exportBackupArchive(a)
     const b = await open()
     const report = await importArchive(b, backup)
-    expect(report).toMatchObject({ kind: 'backup', productsAdded: 12, modulesRestored: 1, circuitsRestored: 1 })
+    expect(report).toMatchObject({ kind: 'backup', productsAdded: 13, modulesRestored: 1, circuitsRestored: 1 })
     expect((await b.getModule('m1'))?.updatedAt).toBe(5)
     expect((await b.getCircuit('c1'))?.nodes).toHaveLength(1)
     expect((await b.listStats()).find((s) => s.key === statKey)?.count).toBe(2)

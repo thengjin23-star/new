@@ -59,7 +59,7 @@ function NodeInspector({ node }: { node: PneumaticFlowNode }) {
   )
   const products = useLibraryStore((s) => s.products)
   const [editProduct, setEditProduct] = useState<Product | undefined>()
-  const { componentType, tag, product: ref, params, note } = node.data
+  const { componentType, tag, product: ref, params, note, labelSide } = node.data
   const update = (patch: Partial<PneumaticFlowNode['data']>, coalesce?: string) => updateNode(node.id, patch, coalesce)
   const def = registry.get(componentType)
   const product = ref && products[ref.id]
@@ -192,6 +192,21 @@ function NodeInspector({ node }: { node: PneumaticFlowNode }) {
           {def.category === 'actuator' && <CylinderInfo params={params} type={componentType} />}
         </section>
       )}
+
+      <label className="block text-xs text-slate-500">
+        標號位置
+        <select
+          value={labelSide ?? ''}
+          onChange={(e) => update({ labelSide: (e.target.value || undefined) as PneumaticFlowNode['data']['labelSide'] })}
+          className="mt-0.5 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-800"
+        >
+          <option value="">自動（沒有埠的一側）</option>
+          <option value="left">左</option>
+          <option value="right">右</option>
+          <option value="top">上</option>
+          <option value="bottom">下</option>
+        </select>
+      </label>
 
       <label className="block text-xs text-slate-500">
         備註

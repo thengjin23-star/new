@@ -5,7 +5,10 @@ import { findAdapters, insertAdapter, type AdapterOption } from '../assembly/ada
 import { mateStatKeys, suggestPartners, type Suggestion } from '../assembly/memory'
 import { bomToCsv, buildBom } from '../assembly/bom'
 import * as ops from '../assembly/moduleOps'
-import type { DrawingInfo, ModuleDoc, PortRef } from '../assembly/types'
+import { bezierLength, estimateTubeLength, isTubeSocket, tubeControlPoints } from '../assembly/tubes'
+import type { DrawingInfo, ModuleDoc, ModuleTube, PortRef } from '../assembly/types'
+import { deriveModuleCircuit, type ModuleCircuit } from '../assembly/moduleCircuit'
+import { createInitialState, interact, step, type InteractAction, type SimState } from '../engine'
 import { exportLibraryArchive, exportModuleArchive, importArchive, LIBRARY_EXT, MODULE_EXT } from '../catalog/archive'
 import { detectCadFormat } from '../catalog/cad'
 import { parseCadInWorker } from '../catalog/cadClient'
@@ -23,7 +26,14 @@ import { checkMate, type PortSpec } from '../threads'
 import { downloadFile, safeFileName } from '../utils/download'
 import { renderThumbnail } from './thumbnail'
 
-export type Mode = 'select' | 'define-port' | 'measure'
+export type Mode = 'select' | 'define-port' | 'measure' | 'tube' | 'simulate'
+
+/** 3D 模擬：由模組推出的迴路與目前的模擬狀態 */
+export interface ModuleSim {
+  mc: ModuleCircuit
+  state: SimState
+  paused: boolean
+}
 
 export interface DraftPort {
   instance: string
@@ -80,6 +90,12 @@ interface State {
   showDims: boolean
   /** 「產生圖面」對話框 */
   drawingOpen: boolean
+  /** 接 PU 管：已點選的第一個快插接頭 */
+  tubeFrom?: PortRef
+  /** 選取的 PU 管 */
+  selectedTube?: string
+  /** 3D 模擬（mode = 'simulate' 時） */
+  sim?: ModuleSim
 
   init(): Promise<void>
   importFiles(files: readonly File[]): Promise<void>
@@ -135,6 +151,19 @@ interface State {
   clearMeasure(): void
   toggleDims(): void
   openDrawing(open: boolean): void
+  selectTube(tubeId?: string): void
+  setTubeLength(tubeId: string, length: number | undefined): void
+  deleteTube(tubeId: string): void
+  /** 設定（或取消）模擬用的供氣口 */
+  setSupply(ref: PortRef | undefined, pressure?: number): void
+  startSimulation(): void
+  stopSimulation(): void
+  resetSimulation(): void
+  toggleSimulationPause(): void
+  /** 推進模擬 dt 秒（由 requestAnimationFrame 迴圈呼叫） */
+  tickSimulation(dt: number): void
+  /** 模擬中操作元件：點閥切換、按住按鈕閥 */
+  simulationInteract(nodeId: string, action?: InteractAction): void
   /** 圖面設定（圖號、版次、選項）：記在模組裡，不列入復原歷史 */
   setDrawingInfo(patch: Partial<DrawingInfo>): void
   /** 確保目前模組所有零件的網格都已載入 */
@@ -173,11 +202,26 @@ function nextName(name: string, k: number): string {
 }
 
 export const useModuleStore = create<State>()((set, get) => {
-  /** 修改模組（記錄復原歷史並排程自動存檔） */
+  /** 修改模組（記錄復原歷史並排程自動存檔）；模擬中改了供氣壓力等設定時更新模擬 */
   const commit = (doc: ModuleDoc) => {
     const { doc: prev, past } = get()
     set({ doc, past: [...past, prev].slice(-HISTORY_LIMIT), future: [], saved: false })
     scheduleSave()
+    if (get().mode === 'simulate') set({ sim: updatedSimulation(doc) })
+  }
+
+  const freshSimulation = (doc: ModuleDoc): ModuleSim => {
+    const mc = deriveModuleCircuit(doc, get().products)
+    return { mc, state: step(mc.circuit, createInitialState(mc.circuit), 0), paused: false }
+  }
+
+  /** 元件沒有增減（例如只改了供氣壓力）時保留閥位與活塞位置，否則重新開始 */
+  const updatedSimulation = (doc: ModuleDoc): ModuleSim => {
+    const sim = get().sim
+    const mc = deriveModuleCircuit(doc, get().products)
+    const before = sim?.mc.circuit.nodes
+    const same = !!before && before.length === mc.circuit.nodes.length && mc.circuit.nodes.every((n, i) => before[i].id === n.id && before[i].type === n.type)
+    return same ? { ...sim!, mc, state: step(mc.circuit, sim!.state, 0) } : { mc, state: step(mc.circuit, createInitialState(mc.circuit), 0), paused: false }
   }
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined
@@ -198,6 +242,43 @@ export const useModuleStore = create<State>()((set, get) => {
   const info = (text: string) => set({ message: { kind: 'info', text } })
   const fail = (err: unknown) =>
     set({ busy: undefined, message: { kind: 'error', text: err instanceof Error ? err.message : String(err) } })
+
+  /** 接 PU 管模式：點選兩個快插接頭 */
+  const clickTubePort = (ref: PortRef) => {
+    const { doc, products, tubeFrom } = get()
+    const port = ops.getPort(doc, products, ref)
+    if (!isTubeSocket(port)) {
+      info('PU 管只能接在快插接頭的插管端（規格為「Ø6 快插」這類）')
+      return
+    }
+    if (ops.usedPorts(doc).has(`${ref.instance}:${ref.port}`)) {
+      info('這個快插接頭已經接了零件或管子')
+      return
+    }
+    if (!tubeFrom || (tubeFrom.instance === ref.instance && tubeFrom.port === ref.port)) {
+      set({ tubeFrom: tubeFrom ? undefined : ref })
+      return
+    }
+    const estimate = estimateLengthBetween(tubeFrom, ref)
+    const r = ops.addTube(doc, products, tubeFrom, ref, estimate)
+    if ('error' in r) {
+      set({ tubeFrom: undefined, message: { kind: 'error', text: ops.ADD_TUBE_ERROR_TEXT[r.error] } })
+      return
+    }
+    commit(r.doc)
+    const tube = r.doc.tubes!.find((t) => t.id === r.tubeId)!
+    set({ tubeFrom: undefined, selectedTube: r.tubeId, selected: undefined })
+    info(`已接上 PU 管 ${tube.label ?? ''}（建議長度 ${tube.length ?? '—'} mm，可在右側修改）`)
+  }
+
+  /** 兩個埠之間的 PU 管建議長度（依目前位置） */
+  const estimateLengthBetween = (a: PortRef, b: PortRef): number | undefined => {
+    const { doc, products } = get()
+    const frames = tubeFrames(doc, products, { a, b })
+    const od = ops.getPort(doc, products, a)?.spec
+    if (!frames || od?.kind !== 'tube') return undefined
+    return estimateTubeLength(bezierLength(tubeControlPoints(frames[0], frames[1])), od.od)
+  }
 
   /** 直接寫入資料庫之後（匯入檔案、安裝範例），重新讀取共用產品庫並通知其他分頁 */
   const refreshProducts = () => useLibraryStore.getState().reload(true)
@@ -294,7 +375,18 @@ export const useModuleStore = create<State>()((set, get) => {
   }
 
   const openDoc = async (doc: ModuleDoc) => {
-    set({ doc, past: [], future: [], selected: undefined, connectFrom: undefined, pendingMate: undefined, saved: true })
+    set({
+      doc,
+      past: [],
+      future: [],
+      selected: undefined,
+      selectedTube: undefined,
+      connectFrom: undefined,
+      pendingMate: undefined,
+      tubeFrom: undefined,
+      saved: true,
+      ...(get().mode === 'simulate' || get().mode === 'tube' ? { mode: 'select' as const, sim: undefined } : {}),
+    })
     remember(doc.id)
     await ensureDocMeshes(doc)
     set((s) => ({ fitRequest: s.fitRequest + 1, fitTarget: undefined }))
@@ -549,7 +641,12 @@ export const useModuleStore = create<State>()((set, get) => {
     },
 
     removeSelected() {
-      const { selected, doc, products } = get()
+      const { selected, selectedTube, doc, products } = get()
+      if (selectedTube) {
+        commit(ops.removeTube(doc, selectedTube))
+        set({ selectedTube: undefined })
+        return
+      }
       if (!selected) return
       commit(ops.removeInstance(doc, products, selected))
       set({ selected: undefined, connectFrom: undefined })
@@ -633,11 +730,54 @@ export const useModuleStore = create<State>()((set, get) => {
     },
 
     select(instance) {
-      set({ selected: instance })
+      set({ selected: instance, selectedTube: undefined })
     },
 
     setMode(mode) {
-      set({ mode, connectFrom: undefined, draftPort: undefined, measure: [] })
+      if (mode === 'simulate') {
+        get().startSimulation()
+        return
+      }
+      set({ mode, connectFrom: undefined, draftPort: undefined, measure: [], tubeFrom: undefined, sim: undefined })
+    },
+
+    startSimulation() {
+      set({
+        mode: 'simulate',
+        sim: freshSimulation(get().doc),
+        connectFrom: undefined,
+        pendingMate: undefined,
+        draftPort: undefined,
+        measure: [],
+        tubeFrom: undefined,
+        selected: undefined,
+        selectedTube: undefined,
+      })
+    },
+
+    stopSimulation() {
+      set({ mode: 'select', sim: undefined })
+    },
+
+    resetSimulation() {
+      if (get().sim) set({ sim: freshSimulation(get().doc) })
+    },
+
+    toggleSimulationPause() {
+      const sim = get().sim
+      if (sim) set({ sim: { ...sim, paused: !sim.paused } })
+    },
+
+    tickSimulation(dt) {
+      const sim = get().sim
+      if (!sim || sim.paused) return
+      set({ sim: { ...sim, state: step(sim.mc.circuit, sim.state, dt) } })
+    },
+
+    simulationInteract(nodeId, action = 'toggle') {
+      const sim = get().sim
+      if (!sim) return
+      set({ sim: { ...sim, state: interact(sim.mc.circuit, sim.state, nodeId, undefined, action) } })
     },
 
     pickFace(instance, partIndex, triangle, clickLocal) {
@@ -662,6 +802,10 @@ export const useModuleStore = create<State>()((set, get) => {
     },
 
     clickPort(ref) {
+      if (get().mode === 'tube') {
+        clickTubePort(ref)
+        return
+      }
       const { connectFrom, doc } = get()
       if (ops.usedPorts(doc).has(`${ref.instance}:${ref.port}`)) {
         info('這個埠已經接了零件；要改接請先在「檢查」頁拆開')
@@ -724,15 +868,15 @@ export const useModuleStore = create<State>()((set, get) => {
     },
 
     undo() {
-      const { past, doc, future } = get()
-      if (!past.length) return
+      const { past, doc, future, mode } = get()
+      if (!past.length || mode === 'simulate') return
       set({ doc: past[past.length - 1], past: past.slice(0, -1), future: [doc, ...future], connectFrom: undefined })
       scheduleSave()
     },
 
     redo() {
-      const { past, doc, future } = get()
-      if (!future.length) return
+      const { past, doc, future, mode } = get()
+      if (!future.length || mode === 'simulate') return
       set({ doc: future[0], past: [...past, doc], future: future.slice(1), connectFrom: undefined })
       scheduleSave()
     },
@@ -822,6 +966,24 @@ export const useModuleStore = create<State>()((set, get) => {
       set({ drawingOpen: open })
     },
 
+    selectTube(tubeId) {
+      set({ selectedTube: tubeId, selected: tubeId ? undefined : get().selected })
+    },
+
+    setTubeLength(tubeId, length) {
+      commit(ops.updateTube(get().doc, tubeId, { length }))
+    },
+
+    deleteTube(tubeId) {
+      commit(ops.removeTube(get().doc, tubeId))
+      if (get().selectedTube === tubeId) set({ selectedTube: undefined })
+    },
+
+    setSupply(ref, pressure) {
+      const { doc } = get()
+      commit(ops.setSupply(doc, ref && { ...ref, ...(pressure !== undefined ? { pressure } : doc.supply?.pressure !== undefined && { pressure: doc.supply.pressure }) }))
+    },
+
     setDrawingInfo(patch) {
       const { doc } = get()
       set({ doc: { ...doc, drawing: { ...doc.drawing, ...patch }, updatedAt: Date.now() }, saved: false })
@@ -833,6 +995,14 @@ export const useModuleStore = create<State>()((set, get) => {
     },
   }
 })
+
+/** PU 管兩端埠的世界座標（原點與朝外的軸向）；埠不存在時回傳 undefined */
+export const tubeFrames = (
+  doc: ModuleDoc,
+  products: ops.ProductMap,
+  tube: Pick<ModuleTube, 'a' | 'b'>,
+  transforms = ops.computeTransforms(doc, products).transforms,
+) => ops.tubeFrames(doc, products, tube, transforms)
 
 /** 目前模組中所有零件的世界矩陣 */
 export function useTransforms(): ops.TransformResult {

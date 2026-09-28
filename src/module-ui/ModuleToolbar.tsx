@@ -5,6 +5,7 @@ import { useModuleStore } from './moduleStore'
 import { BarButton, Button, Dialog } from '../components/ui'
 import { DrawingDialog } from './DrawingDialog'
 import { StepExportDialog } from './StepExportDialog'
+import { generateCircuitFromModule } from './generateCircuit'
 
 export function ModuleToolbar() {
   const doc = useModuleStore((s) => s.doc)
@@ -33,8 +34,8 @@ export function ModuleToolbar() {
       <div className="mx-1 h-6 w-px shrink-0 bg-white/15" />
       <BarButton label="新模組" onClick={newModule} />
       <BarButton label="開啟…" onClick={() => setListOpen(true)} />
-      <BarButton label="復原" onClick={undo} disabled={!canUndo} title="Ctrl+Z" />
-      <BarButton label="重做" onClick={redo} disabled={!canRedo} title="Ctrl+Y" />
+      <BarButton label="復原" onClick={undo} disabled={!canUndo || mode === 'simulate'} title="Ctrl+Z" />
+      <BarButton label="重做" onClick={redo} disabled={!canRedo || mode === 'simulate'} title="Ctrl+Y" />
       <BarButton label="顯示全部" onClick={() => requestFit()} />
       <BarButton
         label={mode === 'measure' ? '結束量測' : '量測'}
@@ -43,8 +44,31 @@ export function ModuleToolbar() {
         disabled={doc.instances.length === 0}
         title="量測兩點距離"
       />
+      <BarButton
+        label={mode === 'simulate' ? '結束模擬' : '模擬'}
+        aria-pressed={mode === 'simulate'}
+        onClick={() => setMode(mode === 'simulate' ? 'select' : 'simulate')}
+        disabled={doc.instances.length === 0}
+        title="依模組的氣路模擬：點閥切換、氣缸動作"
+      />
+      <BarButton
+        label={mode === 'tube' ? '結束接管' : '接 PU 管'}
+        aria-pressed={mode === 'tube'}
+        onClick={() => setMode(mode === 'tube' ? 'select' : 'tube')}
+        disabled={doc.instances.length === 0}
+        title="點選兩個快插接頭，接上 PU 管"
+      />
       <BarButton label="對準選取" onClick={() => requestFit(selected)} disabled={!selected} title="縮放到選取的零件" />
       <BarButton label="產生圖面" onClick={() => openDrawing(true)} disabled={doc.instances.length === 0} title="三視圖、零件表、標題欄：PDF／DXF／SVG" />
+      <BarButton
+        label="產生迴路圖"
+        onClick={() => {
+          const error = generateCircuitFromModule()
+          if (error) useModuleStore.setState({ message: { kind: 'error', text: error } })
+        }}
+        disabled={doc.instances.length === 0 || mode === 'simulate'}
+        title="依模組的氣路產生迴路圖（開在迴路圖分頁）"
+      />
       <BarButton label="匯出 STEP" onClick={() => setStepOpen(true)} disabled={doc.instances.length === 0} title="STEP 組立檔（所有零件依組立位置）" />
       <BarButton label="匯出模組" onClick={() => void exportModuleFile()} disabled={doc.instances.length === 0} />
       <span className="ml-auto pl-2 text-xs whitespace-nowrap text-slate-300" role="status">

@@ -1,6 +1,7 @@
 import { CATEGORY_LABEL, type Product } from '../catalog/types'
 import { toCsv } from '../utils/csv'
 import type { ProductMap } from './moduleOps'
+import { formatMeters, tubeBom } from './tubes'
 import type { ModuleDoc } from './types'
 
 export interface BomRow {
@@ -50,6 +51,16 @@ export function bomToCsv(doc: ModuleDoc, rows: readonly BomRow[]): string {
       ...(cols.maker ? [r.product.maker ?? ''] : []),
       r.quantity,
       ...(cols.price ? [r.product.price ?? '', r.product.price !== undefined ? r.product.price * r.quantity : ''] : []),
+    ]),
+    // PU 管：依管徑合計總長
+    ...tubeBom(doc).map((t, i) => [
+      rows.length + i + 1,
+      `PU 管 ${t.label}`,
+      `${t.count} 條`,
+      'PU 管',
+      ...(cols.maker ? [''] : []),
+      formatMeters(t.length),
+      ...(cols.price ? ['', ''] : []),
     ]),
     ...(total !== undefined ? [[], ['', '', '', '', ...(cols.maker ? [''] : []), '', '合計', total]] : []),
   ])

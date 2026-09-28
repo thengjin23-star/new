@@ -24,6 +24,8 @@ export type PneumaticNodeData = {
   params?: Params
   /** 備註 */
   note?: string
+  /** 標號與型號放在符號的哪一側；未指定時自動選沒有埠的一側 */
+  labelSide?: 'left' | 'right' | 'top' | 'bottom'
 }
 
 export type NoteNodeData = {

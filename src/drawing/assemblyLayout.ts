@@ -33,7 +33,8 @@ export interface BomLine {
   modelCode: string
   name: string
   maker?: string
-  quantity: number
+  /** 數量；PU 管為總長（例如「1.25 m」） */
+  quantity: number | string
 }
 
 /** 對外接口在一個視圖中的投影 */

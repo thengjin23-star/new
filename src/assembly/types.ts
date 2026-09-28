@@ -21,6 +21,24 @@ export interface Mate {
   angle: number
 }
 
+/** PU 管：接在兩個快插埠之間（不影響零件位置） */
+export interface ModuleTube {
+  id: string
+  a: PortRef
+  b: PortRef
+  /** 管外徑（mm） */
+  od: number
+  /** 顯示用的管徑，例如「Ø6」「Ø1/4"」 */
+  label?: string
+  /** 管長（mm）；未指定時依兩端位置估算 */
+  length?: number
+}
+
+/** 模擬用的供氣口：接在哪個埠、供氣壓力（MPa） */
+export interface ModuleSupply extends PortRef {
+  pressure?: number
+}
+
 /** 4×4 矩陣，行優先（column-major，與 three.js Matrix4.elements 相同） */
 export type Mat4 = number[]
 
@@ -50,6 +68,10 @@ export interface ModuleDoc {
   drawing?: DrawingInfo
   instances: ModuleInstance[]
   mates: Mate[]
+  /** PU 管 */
+  tubes?: ModuleTube[]
+  /** 模擬用的供氣口 */
+  supply?: ModuleSupply
   /** 根零件（沒有父零件）的位置；鎖合的零件由 mates 推導，不存在這裡 */
   placements: Record<string, Mat4>
   createdAt: number

@@ -115,7 +115,7 @@ function PneumaticNodeImpl({ id, data, selected }: NodeProps<PneumaticFlowNode>)
 
   const title = [tag, product?.modelCode, def.label].filter(Boolean).join('　')
   const portSides = new Set(Object.values(symbol.ports).map((g) => rotateSide(flipSide(g.side, flip), rotation)))
-  const labelSide = LABEL_SIDES.find((side) => !portSides.has(side)) ?? 'left'
+  const labelSide = data.labelSide ?? LABEL_SIDES.find((side) => !portSides.has(side)) ?? 'left'
 
   return (
     <div

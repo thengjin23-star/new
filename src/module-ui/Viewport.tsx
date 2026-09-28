@@ -1,4 +1,4 @@
-import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei'
+import { GizmoHelper, GizmoViewport, Html, OrbitControls } from '@react-three/drei'
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box3, Color, Matrix4, Vector3, type Group, type PerspectiveCamera } from 'three'
@@ -11,6 +11,8 @@ import { faceGeometry, geometriesFor } from './geometryCache'
 import { useModuleStore, useTransforms } from './moduleStore'
 import { DimensionLines, MeasureOverlay } from './Measure'
 import { PortMarker } from './PortMarker'
+import { TubeView } from './TubeView'
+import { cylinderMotion, interactionOf, useSimPiston, useSimValveActive } from './simulation'
 
 const DEFAULT_COLOR = new Color('#b9c1c9')
 
@@ -20,6 +22,13 @@ function InstanceView({ instance, product, mesh, matrix }: { instance: ModuleIns
   const selected = useModuleStore((s) => s.selected === instance.id)
   const connecting = useModuleStore((s) => !!s.connectFrom)
   const defining = useModuleStore((s) => s.mode === 'define-port')
+  const simulating = useModuleStore((s) => s.mode === 'simulate')
+  const nodeType = useModuleStore((s) => s.sim?.mc.circuit.nodes.find((n) => n.id === instance.id)?.type)
+  const interaction = simulating ? interactionOf(nodeType) : undefined
+  const valveActive = useSimValveActive(instance.id)
+  const piston = useSimPiston(instance.id)
+  const motion = useMemo(() => cylinderMotion(product, mesh), [product, mesh])
+  const offset = motion && piston !== undefined ? (motion.axis.map((v) => v * piston * motion.stroke) as Vec3) : undefined
   const [hover, setHover] = useState<{ part: number; face: number } | null>(null)
   const colors = useMemo(() => mesh.parts.map((p) => (p.color ? new Color(...p.color) : DEFAULT_COLOR)), [mesh])
 
@@ -34,6 +43,10 @@ function InstanceView({ instance, product, mesh, matrix }: { instance: ModuleIns
     if (e.delta > 4) return // 拖曳旋轉視角，不是點選
     e.stopPropagation()
     const s = useModuleStore.getState()
+    if (s.mode === 'simulate') {
+      if (interaction === 'toggle') s.simulationInteract(instance.id)
+      return
+    }
     if (s.mode === 'measure') {
       s.addMeasurePoint(e.point.toArray() as Vec3)
       return
@@ -53,27 +66,77 @@ function InstanceView({ instance, product, mesh, matrix }: { instance: ModuleIns
     if (!hover || hover.part !== partIndex || hover.face !== face) setHover({ part: partIndex, face })
   }
 
+  // 按鈕閥：按住作動、放開（或移出零件）復歸。掛在整個零件上，游標在零件的各個網格之間移動時不會放開
+  const onPointerDown = (e: ThreeEvent<PointerEvent>) => {
+    if (interaction !== 'momentary') return
+    e.stopPropagation()
+    useModuleStore.getState().simulationInteract(instance.id, 'press')
+  }
+  const release = () => {
+    if (interaction === 'momentary') useModuleStore.getState().simulationInteract(instance.id, 'release')
+  }
+
+  // 結束模擬時游標可能還停在閥上：恢復游標
+  useEffect(() => {
+    if (!interaction) return
+    return () => {
+      document.body.style.cursor = ''
+    }
+  }, [interaction])
+
+  const emissive = selected ? '#2563eb' : valveActive ? '#f59e0b' : '#000000'
+  const emissiveIntensity = selected ? 0.22 : valveActive ? 0.35 : 0
   return (
-    <group ref={group} name={instance.id} matrixAutoUpdate={false}>
-      {geometries.map((g, i) => (
-        <mesh
-          key={i}
-          geometry={g}
-          onClick={(e) => onClick(e, i)}
-          onPointerMove={(e) => onMove(e, i)}
-          onPointerOut={() => setHover(null)}
-        >
-          <meshStandardMaterial
-            color={colors[i]}
-            metalness={0.15}
-            roughness={0.55}
-            emissive={selected ? '#2563eb' : '#000000'}
-            emissiveIntensity={selected ? 0.22 : 0}
-            transparent={connecting}
-            opacity={connecting ? 0.75 : 1}
-          />
-        </mesh>
-      ))}
+    <group
+      ref={group}
+      name={instance.id}
+      matrixAutoUpdate={false}
+      onPointerDown={interaction ? onPointerDown : undefined}
+      onPointerUp={interaction ? release : undefined}
+      onPointerEnter={interaction ? () => (document.body.style.cursor = 'pointer') : undefined}
+      onPointerLeave={
+        interaction
+          ? () => {
+              document.body.style.cursor = ''
+              release()
+            }
+          : undefined
+      }
+    >
+      {geometries.map((g, i) => {
+        const part = (
+          <mesh
+            key={i}
+            geometry={g}
+            onClick={(e) => onClick(e, i)}
+            onPointerMove={(e) => onMove(e, i)}
+            onPointerOut={() => setHover(null)}
+          >
+            <meshStandardMaterial
+              color={colors[i]}
+              metalness={0.15}
+              roughness={0.55}
+              emissive={emissive}
+              emissiveIntensity={emissiveIntensity}
+              transparent={connecting}
+              opacity={connecting ? 0.75 : 1}
+            />
+          </mesh>
+        )
+        // 氣缸的可動件：沿伸出方向移動「活塞位置 × 行程」
+        return offset && motion?.parts.has(i) ? (
+          <group key={i} position={offset}>
+            {part}
+          </group>
+        ) : (
+          part
+        )
+      })}
+      {simulating && piston !== undefined && !motion && (
+        <Html position={product.ports[0]?.frame.origin ?? [0, 0, 0]} center zIndexRange={[20, 0]}>
+          <span className="rounded bg-slate-800/85 px-1.5 py-0.5 text-[10px] whitespace-nowrap text-white">伸出 {Math.round(piston * 100)}%</span>
+        </Html>
+      )}
       {defining && hover && (
         <mesh geometry={faceGeometry(product.source.sha256, hover.part, mesh.parts[hover.part], hover.face)} renderOrder={3}>
           <meshBasicMaterial color="#2563eb" transparent opacity={0.45} depthTest={false} />
@@ -152,8 +215,11 @@ export function Viewport() {
         if (e.type !== 'click') return
         const s = useModuleStore.getState()
         if (s.connectFrom) s.cancelConnect()
-        else if (s.mode === 'select') s.select(undefined)
-        else if (s.mode === 'measure') s.clearMeasure()
+        else if (s.mode === 'tube') s.setMode('tube')
+        else if (s.mode === 'select') {
+          s.select(undefined)
+          s.selectTube(undefined)
+        } else if (s.mode === 'measure') s.clearMeasure()
       }}
     >
       <color attach="background" args={['#eef2f6']} />
@@ -168,6 +234,9 @@ export function Viewport() {
           if (!product || !mesh || !transforms[inst.id]) return null
           return <InstanceView key={inst.id} instance={inst} product={product} mesh={mesh} matrix={transforms[inst.id]} />
         })}
+        {(doc.tubes ?? []).map((t) => (
+          <TubeView key={t.id} tube={t} />
+        ))}
       </group>
       <OrbitControls makeDefault enableDamping={false} />
       <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
