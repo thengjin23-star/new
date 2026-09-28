@@ -137,6 +137,61 @@ export const VALVE_SPECS = {
     right: ['spring'],
     mode: 'springReturn',
   },
+  valve52Pilot: {
+    type: 'valve52Pilot',
+    label: '5/2 單氣控閥',
+    portSet: 5,
+    boxes: [P_A, P_B],
+    rest: 1,
+    left: ['pilot'],
+    right: ['spring'],
+    mode: 'pilot',
+    pilots: { l: '14' },
+  },
+  valve52DoublePilot: {
+    type: 'valve52DoublePilot',
+    label: '5/2 雙氣控閥（記憶）',
+    portSet: 5,
+    boxes: [P_A, P_B],
+    rest: 1,
+    left: ['pilot'],
+    right: ['pilot'],
+    mode: 'pilotDouble',
+    pilots: { l: '14', r: '12' },
+  },
+  valve32Pilot: {
+    type: 'valve32Pilot',
+    label: '3/2 氣控閥（常閉）',
+    portSet: 3,
+    boxes: [[['P', 'A']], [['A', 'R']]],
+    rest: 1,
+    left: ['pilot'],
+    right: ['spring'],
+    mode: 'pilot',
+    pilots: { l: '12' },
+  },
+  valve32Roller: {
+    type: 'valve32Roller',
+    label: '3/2 滾輪閥（常閉）',
+    portSet: 3,
+    boxes: [[['P', 'A']], [['A', 'R']]],
+    rest: 1,
+    left: ['roller'],
+    right: ['spring'],
+    mode: 'roller',
+  },
+  valve32Timer: {
+    type: 'valve32Timer',
+    label: '氣動延時閥（常閉）',
+    portSet: 3,
+    boxes: [[['P', 'A']], [['A', 'R']]],
+    rest: 1,
+    left: ['pilot'],
+    right: ['spring'],
+    mode: 'timer',
+    pilots: { l: '12' },
+    category: 'logic',
+  },
 } as const satisfies Record<string, ValveSpec>
 
 export type ValveType = keyof typeof VALVE_SPECS
@@ -151,3 +206,8 @@ export const valve32NC = defineValve(VALVE_SPECS.valve32NC)
 export const valve32NO = defineValve(VALVE_SPECS.valve32NO)
 export const valve32Button = defineValve(VALVE_SPECS.valve32Button)
 export const valve22NC = defineValve(VALVE_SPECS.valve22NC)
+export const valve52Pilot = defineValve(VALVE_SPECS.valve52Pilot)
+export const valve52DoublePilot = defineValve(VALVE_SPECS.valve52DoublePilot)
+export const valve32Pilot = defineValve(VALVE_SPECS.valve32Pilot)
+export const valve32Roller = defineValve(VALVE_SPECS.valve32Roller)
+export const valve32Timer = defineValve(VALVE_SPECS.valve32Timer)

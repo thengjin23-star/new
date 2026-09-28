@@ -4,6 +4,7 @@ import { cylinderDoubleSymbol } from './CylinderDoubleSymbol'
 import { cylinderSingleSymbol } from './CylinderSingleSymbol'
 import { exhaustSymbol, plugSymbol, silencerSymbol } from './ExhaustSymbol'
 import { checkValveSymbol, flowControlSymbol, throttleSymbol } from './FlowControlSymbol'
+import { pressureSwitchSymbol, quickExhaustSymbol, shuttleValveSymbol, twoPressureValveSymbol } from './LogicSymbol'
 import type { SymbolDef } from './types'
 import { valveSymbols } from './ValveSymbol'
 
@@ -22,6 +23,10 @@ export const symbolRegistry: Readonly<Record<string, SymbolDef>> = {
   checkValve: checkValveSymbol,
   flowControl: flowControlSymbol,
   throttle: throttleSymbol,
+  quickExhaust: quickExhaustSymbol,
+  shuttleValve: shuttleValveSymbol,
+  twoPressureValve: twoPressureValveSymbol,
+  pressureSwitch: pressureSwitchSymbol,
   cylinderDouble: cylinderDoubleSymbol,
   cylinderSingle: cylinderSingleSymbol,
   exhaust: exhaustSymbol,

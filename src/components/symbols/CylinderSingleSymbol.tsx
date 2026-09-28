@@ -13,6 +13,7 @@ import {
   PORT_A_X,
   ROD_H,
   ROD_LEN,
+  SensorMarks,
   TRAVEL,
 } from './CylinderDoubleSymbol'
 import { PortLabel, Stub } from './parts'
@@ -22,7 +23,7 @@ import type { SymbolDef, SymbolProps } from './types'
  * 單動氣缸（彈簧復歸）：與雙動氣缸同尺寸，只有後端 A 埠；
  * 有桿側畫彈簧，活塞伸出時彈簧被壓縮。
  */
-function CylinderSingle({ state, ports, rotation, flip, labels }: SymbolProps) {
+function CylinderSingle({ state, ports, rotation, flip, labels, params }: SymbolProps) {
   const { piston } = state as CylinderState
   const px = PISTON_MIN_X + piston * TRAVEL
   const rodY = BARREL_Y + BARREL_H / 2 - ROD_H / 2
@@ -47,6 +48,7 @@ function CylinderSingle({ state, ports, rotation, flip, labels }: SymbolProps) {
       <rect x={px + PISTON_W} y={rodY} width={ROD_LEN} height={ROD_H} fill={SYMBOL_STROKE} />
       <rect x={rodEnd - 4} y={rodY - 5} width={4} height={ROD_H + 10} fill={SYMBOL_STROKE} />
       <rect x={px} y={BARREL_Y + 1} width={PISTON_W} height={BARREL_H - 2} fill={SYMBOL_STROKE} />
+      <SensorMarks params={params} piston={piston} simulating={!!ports} rotation={rotation} flip={flip} />
       <PortLabel x={PORT_A_X + 10} y={CYLINDER_HEIGHT - 8} rotation={rotation} flip={flip}>
         {labels?.A ?? 'A'}
       </PortLabel>

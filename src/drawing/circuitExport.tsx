@@ -3,7 +3,7 @@ import { getSymbol } from '../components/symbols/symbolRegistry'
 import { registry, resolveParams } from '../engine'
 import type { Product } from '../catalog/types'
 import { buildCircuitBom } from '../store/circuitBom'
-import { isPneumaticNode, type CircuitFlowNode, type TubeFlowEdge } from '../store/flow'
+import { isPilotTube, isPneumaticNode, pilotPorts, type CircuitFlowNode, type TubeFlowEdge } from '../store/flow'
 import type { CircuitSheetInput } from './circuitSheet'
 
 export interface CircuitExportOptions {
@@ -57,7 +57,13 @@ export function circuitSheetInput(nodes: readonly CircuitFlowNode[], edges: read
     paper: options.paper,
     title: options.title,
     nodes: sheetNodes,
-    tubes: edges.map((e) => ({ source: e.source, sourcePort: e.sourceHandle ?? '', target: e.target, targetPort: e.targetHandle ?? '' })),
+    tubes: edges.map((e) => ({
+      source: e.source,
+      sourcePort: e.sourceHandle ?? '',
+      target: e.target,
+      targetPort: e.targetHandle ?? '',
+      pilot: isPilotTube(e, pilotPorts(nodes)),
+    })),
     notes,
     bom: buildCircuitBom(nodes, options.products).map((r) => ({ index: r.index, tags: r.tags, modelCode: r.modelCode, name: r.name, quantity: r.quantity })),
     showTags: options.showTags,

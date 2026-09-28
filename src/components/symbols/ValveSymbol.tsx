@@ -1,7 +1,10 @@
 import type { ReactNode } from 'react'
 import {
   boxOfPosition,
+  numParam,
+  strParam,
   VALVE_SPECS,
+  type Params,
   type PortState,
   type ValveActuator,
   type ValvePassage,
@@ -9,8 +12,9 @@ import {
   type ValveSpec,
   type ValveState,
 } from '../../engine'
-import { portColor, SYMBOL_STROKE } from '../../theme'
-import { Arrow, BlockedMark, PortLabel, Spring, Stub } from './parts'
+import type { Rotation } from '../../store/flow'
+import { CHAMBER_PRESSURE_FILL, portColor, SYMBOL_STROKE } from '../../theme'
+import { Arrow, BlockedMark, PortLabel, Spring, Stub, ValueText } from './parts'
 import type { PortGeometry, SymbolDef, SymbolProps } from './types'
 
 /*
@@ -21,6 +25,8 @@ import type { PortGeometry, SymbolDef, SymbolProps } from './types'
  *        A   B              ← 上方工作埠
  *   ⊡ [ 閥位… | 靜止位 ] ⋀  ← 操作記號跟著方格移動
  *       EA  P  EB           ← 下方供氣與排氣埠
+ *
+ * 氣控閥的先導埠（12、14）固定在符號的左右兩端，以虛線（控制線）連到先導操作記號。
  */
 const S = 64
 const PAD = 4
@@ -39,7 +45,12 @@ const ACTUATOR_WIDTH: Record<ValveActuator, number> = {
   solenoid: 24,
   spring: 20,
   button: 22,
+  pilot: 22,
+  roller: 26,
 }
+
+/** 控制線（先導）的虛線樣式 */
+const PILOT_DASH = '5 3'
 
 interface LocalPort {
   x: number
@@ -105,20 +116,30 @@ function Box({
   )
 }
 
+interface ActuatorContext {
+  spec: ValveSpec
+  state: ValveState
+  params?: Params
+  ports?: Readonly<Record<string, PortState>>
+  rotation: Rotation
+  flip?: boolean
+}
+
 /** 一個操作記號：edge = 貼著方格的一側，dir = 往外的方向 */
 function Actuator({
   kind,
   edge,
   dir,
   side,
-  state,
+  ctx,
 }: {
   kind: ValveActuator
   edge: number
   dir: 1 | -1
   side: 'l' | 'r'
-  state: ValveState
+  ctx: ActuatorContext
 }): ReactNode {
+  const { state, params, rotation, flip } = ctx
   const stroke = { stroke: SYMBOL_STROKE, strokeWidth: 2, fill: 'none' }
   switch (kind) {
     case 'lever':
@@ -143,9 +164,10 @@ function Actuator({
     case 'solenoid': {
       const on = !!state.coils?.[side]
       const x0 = Math.min(edge + dir * 6, edge + dir * 20)
+      const name = strParam(params, side === 'l' ? 'coilL' : 'coilR')
       return (
-        <g data-action={`coil:${side}`} style={{ cursor: 'pointer' }}>
-          <title>{on ? '電磁線圈（通電）' : '電磁線圈（斷電）'}</title>
+        <g data-action={`coil:${side}`} data-coil={name || undefined} style={{ cursor: 'pointer' }}>
+          <title>{`${name ? `${name}：` : ''}${on ? '電磁線圈（通電）' : '電磁線圈（斷電）'}`}</title>
           {/* 放大點擊範圍 */}
           <rect x={Math.min(edge, edge + dir * 24)} y={MID - 16} width={24} height={32} fill="transparent" />
           <line x1={edge} y1={MID} x2={edge + dir * 6} y2={MID} stroke={SYMBOL_STROKE} strokeWidth={2} />
@@ -159,6 +181,44 @@ function Actuator({
             strokeWidth={2}
           />
           <line x1={x0} y1={MID + 10} x2={x0 + 14} y2={MID - 10} stroke={on ? COIL_ON_STROKE : SYMBOL_STROKE} strokeWidth={1.5} />
+          {name && (
+            <ValueText x={x0 + 7} y={MID - 17} rotation={rotation} flip={flip} size={9} color={on ? COIL_ON_STROKE : '#334155'}>
+              {name}
+            </ValueText>
+          )}
+        </g>
+      )
+    }
+    case 'pilot': {
+      // 氣控：貼著方格的小方框，內有指向閥的三角形；先導埠有壓時填色
+      const port = ctx.spec.pilots?.[side]
+      const on = !!port && ctx.ports?.[port] === 'pressure'
+      const near = edge + dir * 2
+      const far = edge + dir * 16
+      const x0 = Math.min(near, far)
+      const tip = near + dir * 3
+      const base = far - dir * 3
+      return (
+        <g>
+          <line x1={edge} y1={MID} x2={near} y2={MID} stroke={SYMBOL_STROKE} strokeWidth={2} />
+          <rect x={x0} y={MID - 9} width={14} height={18} fill={on ? CHAMBER_PRESSURE_FILL : 'white'} stroke={SYMBOL_STROKE} strokeWidth={2} />
+          <polygon points={`${tip},${MID} ${base},${MID - 5} ${base},${MID + 5}`} fill="none" stroke={SYMBOL_STROKE} strokeWidth={1.5} />
+          <line x1={far} y1={MID} x2={edge + dir * ACTUATOR_WIDTH.pilot} y2={MID} stroke={portColor(port ? ctx.ports?.[port] : undefined)} strokeWidth={2} strokeDasharray={PILOT_DASH} />
+        </g>
+      )
+    }
+    case 'roller': {
+      // 滾輪：桿＋滾輪，氣缸到達觸發位置時壓下（填色）
+      const active = state.position !== ctx.spec.rest
+      const cx = edge + dir * 18
+      const trigger = strParam(params, 'trigger')
+      return (
+        <g>
+          <line x1={edge} y1={MID} x2={edge + dir * 12} y2={MID} stroke={SYMBOL_STROKE} strokeWidth={2} />
+          <circle cx={cx} cy={MID} r={6} fill={active ? COIL_ON_FILL : 'white'} stroke={active ? COIL_ON_STROKE : SYMBOL_STROKE} strokeWidth={2} />
+          <ValueText x={cx} y={MID - 15} rotation={rotation} flip={flip} size={9} color={trigger ? '#334155' : '#dc2626'}>
+            {trigger || '？'}
+          </ValueText>
         </g>
       )
     }
@@ -207,28 +267,44 @@ export function makeValveSymbol(spec: ValveSpec): SymbolDef {
     const p = local[id]
     ports[id] = { x: X0 + p.x, y: p.top ? 0 : HEIGHT, side: p.top ? 'top' : 'bottom' }
   }
+  // 先導埠固定在左右兩端
+  if (spec.pilots?.l) ports[spec.pilots.l] = { x: 0, y: MID, side: 'left' }
+  if (spec.pilots?.r) ports[spec.pilots.r] = { x: WIDTH, y: MID, side: 'right' }
 
-  function ValveGraphic({ state, ports: portStates, rotation, flip, labels }: SymbolProps) {
+  function ValveGraphic({ state, ports: portStates, rotation, flip, labels, params }: SymbolProps) {
     const valve = state as ValveState
     const box = boxOfPosition(spec, valve.position)
     const shift = X0 - box * S
+    const ctx: ActuatorContext = { spec, state: valve, params, ports: portStates, rotation, flip }
 
     // 操作記號由方格往外依序排列
     const leftActuators: ReactNode[] = []
     let edge = 0
     spec.left.forEach((kind, i) => {
-      leftActuators.push(<Actuator key={`l${i}`} kind={kind} edge={edge} dir={-1} side="l" state={valve} />)
+      leftActuators.push(<Actuator key={`l${i}`} kind={kind} edge={edge} dir={-1} side="l" ctx={ctx} />)
       edge -= ACTUATOR_WIDTH[kind]
     })
     const rightActuators: ReactNode[] = []
     edge = count * S
     spec.right.forEach((kind, i) => {
-      rightActuators.push(<Actuator key={`r${i}`} kind={kind} edge={edge} dir={1} side="r" state={valve} />)
+      rightActuators.push(<Actuator key={`r${i}`} kind={kind} edge={edge} dir={1} side="r" ctx={ctx} />)
       edge += ACTUATOR_WIDTH[kind]
     })
+    // 控制線：由固定的先導埠連到跟著方格移動的操作記號外緣
+    const leftOuter = shift - leftWidth
+    const rightOuter = shift + count * S + rightWidth
+    const pilotL = spec.pilots?.l
+    const pilotR = spec.pilots?.r
+    const delay = spec.mode === 'timer' ? numParam(params, 'delay', 2) : 0
 
     return (
       <g>
+        {pilotL && (
+          <line x1={0} y1={MID} x2={leftOuter} y2={MID} stroke={portColor(portStates?.[pilotL])} strokeWidth={2} strokeDasharray={PILOT_DASH} />
+        )}
+        {pilotR && (
+          <line x1={rightOuter} y1={MID} x2={WIDTH} y2={MID} stroke={portColor(portStates?.[pilotR])} strokeWidth={2} strokeDasharray={PILOT_DASH} />
+        )}
         {portIds.map((p) => {
           const x = X0 + local[p].x
           return local[p].top ? (
@@ -256,6 +332,21 @@ export function makeValveSymbol(spec: ValveSpec): SymbolDef {
             </PortLabel>
           )
         })}
+        {pilotL && (
+          <PortLabel x={8} y={MID - 10} rotation={rotation} flip={flip}>
+            {pilotL}
+          </PortLabel>
+        )}
+        {pilotR && (
+          <PortLabel x={WIDTH - 8} y={MID - 10} rotation={rotation} flip={flip}>
+            {pilotR}
+          </PortLabel>
+        )}
+        {spec.mode === 'timer' && (
+          <ValueText x={36} y={9} rotation={rotation} flip={flip} size={9} color={valve.elapsed ? '#b45309' : '#334155'}>
+            {portStates ? `${(valve.elapsed ?? 0).toFixed(1)}／${delay} s` : `延時 ${delay} s`}
+          </ValueText>
+        )}
       </g>
     )
   }

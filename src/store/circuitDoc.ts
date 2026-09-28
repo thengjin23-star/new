@@ -1,4 +1,4 @@
-import { registry } from '../engine'
+import { registry, type Sequence, type SequenceStep } from '../engine'
 import { newId } from '../utils/id'
 import { isPneumaticNode, type CircuitFlowNode, type TubeFlowEdge } from './flow'
 
@@ -23,6 +23,33 @@ export interface CircuitInfo {
 export interface CircuitDoc extends CircuitInfo {
   nodes: StoredNode[]
   edges: StoredEdge[]
+  /** 程序控制的步驟 */
+  sequence?: Sequence
+}
+
+export const EMPTY_SEQUENCE: Sequence = Object.freeze({ steps: [] })
+
+/** 讀回存檔的程序：丟掉格式不對的步驟 */
+export function sanitizeSequence(raw: unknown): Sequence {
+  const r = raw as Partial<Sequence> | null | undefined
+  if (!r || !Array.isArray(r.steps)) return EMPTY_SEQUENCE
+  const steps: SequenceStep[] = []
+  for (const s of r.steps as unknown[]) {
+    const step = s as Partial<SequenceStep> | null
+    if (!step || typeof step !== 'object') continue
+    const set = Object.fromEntries(
+      Object.entries(step.set && typeof step.set === 'object' ? step.set : {}).filter(([k, v]) => typeof k === 'string' && typeof v === 'boolean'),
+    )
+    const until = Array.isArray(step.until) ? step.until.filter((c): c is string => typeof c === 'string' && !!c) : []
+    const delay = typeof step.delay === 'number' && Number.isFinite(step.delay) && step.delay > 0 ? step.delay : undefined
+    steps.push({
+      ...(typeof step.label === 'string' && step.label && { label: step.label }),
+      set,
+      until,
+      ...(delay !== undefined && { delay }),
+    })
+  }
+  return { steps, ...(typeof r.notation === 'string' && r.notation && { notation: r.notation }) }
 }
 
 export const PCIR_EXT = '.pcir'
@@ -114,5 +141,6 @@ export function parsePcir(text: string): CircuitDoc {
     paper: c.paper === 'A3' || c.paper === 'A4' ? c.paper : undefined,
     nodes: nodes.map(stripNode),
     edges: edges.map(stripEdge),
+    sequence: sanitizeSequence(c.sequence),
   }
 }

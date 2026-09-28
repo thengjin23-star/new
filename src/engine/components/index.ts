@@ -5,13 +5,19 @@ import { cylinderDouble } from './cylinderDouble'
 import { cylinderSingle } from './cylinderSingle'
 import { exhaust, plug, silencer } from './exhaust'
 import { checkValve, flowControl, throttle } from './flowControls'
+import { pressureSwitch, quickExhaust, shuttleValve, twoPressureValve } from './logicValves'
 import {
   valve22NC,
   valve32Button,
   valve32NC,
   valve32NO,
+  valve32Pilot,
+  valve32Roller,
+  valve32Timer,
   valve52Double,
+  valve52DoublePilot,
   valve52Manual,
+  valve52Pilot,
   valve52Single,
   valve53Closed,
   valve53Exhaust,
@@ -25,14 +31,17 @@ export {
   cylinderDirection,
   cylinderDouble,
   cylinderForce,
+  cylinderSignals,
   defaultRodDiameter,
   type CylinderState,
 } from './cylinderDouble'
 export { cylinderSingle } from './cylinderSingle'
 export { exhaust, plug, silencer } from './exhaust'
 export { checkValve, flowControl, throttle } from './flowControls'
+export { pressureSwitch, quickExhaust, shuttleValve, twoPressureValve, type QuickExhaustState, type ShuttleState } from './logicValves'
 export {
   boxOfPosition,
+  coilNames,
   defineValve,
   valvePorts,
   type ValveActuator,
@@ -65,9 +74,18 @@ export const builtinComponents: readonly ComponentDefinition<unknown>[] = [
   valve32NO,
   valve32Button,
   valve22NC,
+  valve52Pilot,
+  valve52DoublePilot,
+  valve32Pilot,
+  valve32Roller,
   checkValve,
   flowControl,
   throttle,
+  quickExhaust,
+  shuttleValve,
+  twoPressureValve,
+  valve32Timer,
+  pressureSwitch,
   cylinderDouble,
   cylinderSingle,
   exhaust,

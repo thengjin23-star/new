@@ -1,7 +1,8 @@
 import { CYLINDER_STROKE_SECONDS } from '../constants'
 import { defineComponent, type ParamDef } from '../definition'
 import { numParam } from '../params'
-import type { PortState } from '../types'
+import { END_TOLERANCE, SENSOR_PARAM, sensorName, strParam } from '../signals'
+import type { Params, PortState, Signals } from '../types'
 
 export interface CylinderState {
   /** 活塞位置：0 = 完全縮回，1 = 完全伸出 */
@@ -48,6 +49,13 @@ export const CYLINDER_PARAMS: readonly ParamDef[] = [
   },
 ]
 
+/** 位置感測器：氣缸代號 A → 縮回端 a0、伸出端 a1 */
+export function cylinderSignals(piston: number, params: Params | undefined): Signals {
+  const letter = strParam(params, 'sensor')
+  if (!letter) return {}
+  return { [sensorName(letter, 0)]: piston <= END_TOLERANCE, [sensorName(letter, 1)]: piston >= 1 - END_TOLERANCE }
+}
+
 /** 依缸徑推算常用的活塞桿徑（ISO 15552／常見小型氣缸） */
 const ROD_BY_BORE: readonly (readonly [number, number])[] = [
   [6, 3],
@@ -83,6 +91,13 @@ export function cylinderForce(pressure: number, bore: number, rod: number, direc
   return pressure * area
 }
 
+/** 活塞位置夾在 0～1；非常接近行程端時貼齊（避免累加誤差讓活塞停在 0.9999…） */
+export function clampPiston(v: number): number {
+  if (v >= 1 - 1e-9) return 1
+  if (v <= 1e-9) return 0
+  return v
+}
+
 /** 速度比例：進氣側與排氣側取較窄者（未提供流量資訊時視為全開） */
 const speedFactor = (supply: number | undefined, vent: number | undefined) => Math.min(supply ?? 1, vent ?? 1)
 
@@ -95,15 +110,16 @@ export const cylinderDouble = defineComponent<CylinderState>({
     { id: 'A', role: 'working' },
     { id: 'B', role: 'working' },
   ],
-  params: CYLINDER_PARAMS,
+  params: [...CYLINDER_PARAMS, SENSOR_PARAM],
   createState: () => ({ piston: 0 }),
   getInternalPaths: () => [],
+  getSignals: (state, params) => cylinderSignals(state.piston, params),
   update: ({ state, dt, ports, supplyFlow, ventFlow, params }) => {
     const dir = cylinderDirection(ports.A ?? 'blocked', ports.B ?? 'blocked')
     if (dir === 0) return state
     const factor = dir > 0 ? speedFactor(supplyFlow?.A, ventFlow?.B) : speedFactor(supplyFlow?.B, ventFlow?.A)
     const strokeTime = numParam(params, 'strokeTime', CYLINDER_STROKE_SECONDS)
-    const piston = Math.min(1, Math.max(0, state.piston + (dir * dt * factor) / strokeTime))
+    const piston = clampPiston(state.piston + (dir * dt * factor) / strokeTime)
     return piston === state.piston ? state : { piston }
   },
 })

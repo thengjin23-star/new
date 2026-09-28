@@ -43,7 +43,40 @@ describe('加入元件與標號', () => {
     const node = store().nodes.find((n) => n.id === id) as PneumaticFlowNode
     expect(node.position).toEqual({ x: 16, y: 24 })
     expect(node.data.product?.modelCode).toBe('CDJ2B16-50')
-    expect(toCircuit(store().nodes, store().edges).nodes[0].params).toEqual({ bore: 16, stroke: 50 })
+    // 氣缸自動給代號 A（感測器 a0／a1）
+    expect(toCircuit(store().nodes, store().edges).nodes[0].params).toEqual({ bore: 16, stroke: 50, sensor: 'A' })
+  })
+
+  it('訊號名稱自動編號：線圈 Y1、Y2…、氣缸 A、B…、壓力開關 PS1…；貼上時不重複', async () => {
+    store().addComponent('valve52Double', { x: 0, y: 0 })
+    await tick()
+    store().addComponent('valve52Single', { x: 0, y: 0 })
+    await tick()
+    store().addComponent('cylinderDouble', { x: 0, y: 0 })
+    await tick()
+    store().addComponent('cylinderSingle', { x: 0, y: 0 })
+    await tick()
+    store().addComponent('pressureSwitch', { x: 0, y: 0 })
+    await tick()
+    store().addComponent('pressureSwitch', { x: 0, y: 0 })
+    await tick()
+    expect(pneumatic().map((n) => n.data.params)).toEqual([
+      { coilL: 'Y1', coilR: 'Y2' },
+      { coilL: 'Y3' },
+      { sensor: 'A' },
+      { sensor: 'B' },
+      { signal: 'PS1' },
+      { signal: 'PS2' },
+    ])
+    // 複製單電控閥 → 新的一顆接 Y4
+    store().selectOnly([pneumatic()[1].id])
+    store().copySelected()
+    store().paste()
+    expect(pneumatic().at(-1)?.data.params).toEqual({ coilL: 'Y4' })
+    // 單電控改成雙電控：保留 Y3，右線圈接下一個沒用過的 Y5
+    await tick()
+    store().changeType(pneumatic()[1].id, 'valve52Double')
+    expect(pneumatic()[1].data.params).toEqual({ coilL: 'Y3', coilR: 'Y5' })
   })
 
   it('nextTag 跳過已使用的編號', () => {
@@ -247,5 +280,30 @@ describe('BOM 單價與合計', () => {
   it('沒有任何單價時不加金額欄', () => {
     store().addComponent('cylinderDouble', { x: 0, y: 0 })
     expect(circuitBomToCsv({ name: 'x' }, buildCircuitBom(store().nodes))).not.toContain('單價')
+  })
+})
+
+describe('檢查清單：訊號與程序', () => {
+  it('滾輪閥沒有觸發位置或找不到對應氣缸、氣缸代號重複、程序用到不存在的輸出與感測器', async () => {
+    store().addComponent('valve32Roller', { x: 0, y: 0 })
+    await tick()
+    store().addComponent('cylinderDouble', { x: 0, y: 0 })
+    await tick()
+    store().addComponent('cylinderDouble', { x: 0, y: 0 })
+    await tick()
+    const [roller, c1, c2] = pneumatic()
+    store().updateNode(c2.id, { params: { sensor: 'A' } })
+    await tick()
+    let texts = checkCircuit(store().nodes, store().edges, {}).map((c) => c.text)
+    expect(texts.some((t) => t.includes('沒有指定觸發位置'))).toBe(true)
+    expect(texts.some((t) => t.includes('氣缸代號 A 重複'))).toBe(true)
+    store().updateNode(roller.id, { params: { trigger: 'c1' } })
+    store().updateNode(c1.id, { params: { sensor: 'B' } })
+    await tick()
+    texts = checkCircuit(store().nodes, store().edges, {}, { steps: [{ set: { Y7: true }, until: ['z9'] }, { set: {}, until: [] }] }).map((c) => c.text)
+    expect(texts.some((t) => t.includes('觸發位置 c1 沒有對應的氣缸'))).toBe(true)
+    expect(texts).toContain('程序第 1 步的輸出 Y7 沒有接到任何電磁線圈')
+    expect(texts).toContain('程序第 1 步的條件 z9 在電路中找不到對應的感測器')
+    expect(texts).toContain('程序第 2 步沒有轉移條件，會立即進入下一步')
   })
 })

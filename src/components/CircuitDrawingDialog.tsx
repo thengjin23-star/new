@@ -6,6 +6,7 @@ import type { Sheet } from '../drawing/types'
 import { useSettingsStore } from '../settings/settings'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import { useCircuitStore } from '../store/circuitStore'
+import { lastCycle } from '../store/trace'
 import { today } from '../utils/date'
 import { Button, Dialog } from './ui'
 
@@ -24,7 +25,15 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
   const paper = info.paper ?? settings.paper
   const [text, setText] = useState({ drawingNo: info.drawingNo ?? '', revision: info.revision ?? '' })
   const [showTags, setShowTags] = useState(view.showTags)
-  const [sheet, setSheet] = useState<Sheet | undefined>()
+  const trace = useCircuitStore((s) => s.trace)
+  const sequence = useCircuitStore((s) => s.sequence)
+  // 有模擬記錄時可以附上位移－步驟圖（執行過程序用步驟圖，否則用時間圖）
+  const lastT = trace?.samples[trace.samples.length - 1]?.t ?? 0
+  const diagramMode = trace && lastCycle(trace, lastT) ? 'step' : 'time'
+  const hasDiagram = !!trace && trace.rows.length > 0 && trace.samples.length > 1
+  const [withDiagram, setWithDiagram] = useState(hasDiagram && diagramMode === 'step')
+  const [sheets, setSheets] = useState<Sheet[] | undefined>()
+  const sheet = sheets?.[0]
   const [error, setError] = useState<string | undefined>()
   const [busy, setBusy] = useState<string | undefined>()
 
@@ -40,36 +49,57 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
   // 產生圖紙（出圖模組較大，第一次使用時才載入）
   useEffect(() => {
     let alive = true
-    Promise.all([import('../drawing/circuitExport'), import('../drawing/circuitSheet')])
-      .then(([{ circuitSheetInput }, { layoutCircuitSheet }]) => {
+    Promise.all([
+      import('../drawing/circuitExport'),
+      import('../drawing/circuitSheet'),
+      import('../drawing/diagramSheet'),
+      import('../store/traceDiagram'),
+    ])
+      .then(([{ circuitSheetInput }, { layoutCircuitSheet }, { layoutDiagramSheet }, { diagramGeometry }]) => {
         if (!alive) return
+        const two = withDiagram && hasDiagram
+        const title = {
+          company: settings.company,
+          title: info.name,
+          customer: info.customer,
+          drawingNo: info.drawingNo,
+          revision: info.revision,
+          date: today(),
+          drawer: settings.drawer,
+        }
         const input = circuitSheetInput(nodes, edges, {
           paper,
-          title: {
-            company: settings.company,
-            title: info.name,
-            customer: info.customer,
-            drawingNo: info.drawingNo,
-            revision: info.revision,
-            date: today(),
-            drawer: settings.drawer,
-          },
+          title: { ...title, ...(two && { sheet: '1/2' }) },
           portLabels: view.portLabels,
           showTags,
           remarks: info.notes,
           products,
         })
-        setSheet(layoutCircuitSheet(input))
+        const result: Sheet[] = [layoutCircuitSheet(input)]
+        if (two && trace) {
+          const geometry = diagramGeometry(trace, diagramMode, 1100, lastT, { preferComplete: true, cylinderHeight: 90, outputHeight: 26 })
+          result.push(
+            layoutDiagramSheet({
+              paper,
+              title: { ...title, sheet: '2/2' },
+              geometry,
+              steps: diagramMode === 'step' ? sequence.steps : undefined,
+            }),
+          )
+        }
+        setSheets(result)
         setError(undefined)
       })
       .catch((err) => alive && setError(err instanceof Error ? err.message : String(err)))
     return () => {
       alive = false
     }
-  }, [nodes, edges, info, paper, view.portLabels, showTags, settings, products])
+  }, [nodes, edges, info, paper, view.portLabels, showTags, settings, products, withDiagram, hasDiagram, trace, diagramMode, lastT, sequence])
 
   const svg = useMemo(() => (sheet ? sheetToSvg(sheet) : undefined), [sheet])
   const previewUrl = useObjectUrl(svg, 'image/svg+xml')
+  const svg2 = useMemo(() => (sheets?.[1] ? sheetToSvg(sheets[1]) : undefined), [sheets])
+  const previewUrl2 = useObjectUrl(svg2, 'image/svg+xml')
 
   const fileBase = `${info.name}${info.drawingNo ? `-${info.drawingNo}` : ''}${info.revision ? `-${info.revision}` : ''}`
   const run = async (label: string, task: () => Promise<void> | void) => {
@@ -93,19 +123,19 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <span className="mr-auto self-center text-xs text-slate-500" role="status">
-            {busy ?? (sheet ? `${paper} 橫式．${nodes.length} 個元件` : '產生中…')}
+            {busy ?? (sheet ? `${paper} 橫式．${nodes.length} 個元件${sheets && sheets.length > 1 ? '．共 2 張' : ''}` : '產生中…')}
           </span>
           <Button onClick={onClose}>關閉</Button>
-          <Button disabled={!sheet || !!busy} onClick={() => void run('輸出 SVG…', () => downloadSvg([sheet!], fileBase))}>
+          <Button disabled={!sheet || !!busy} onClick={() => void run('輸出 SVG…', () => downloadSvg(sheets!, fileBase))}>
             下載 SVG
           </Button>
-          <Button disabled={!sheet || !!busy} onClick={() => void run('輸出 DXF…', () => downloadDxf([sheet!], fileBase, settings.dxfFont))}>
+          <Button disabled={!sheet || !!busy} onClick={() => void run('輸出 DXF…', () => downloadDxf(sheets!, fileBase, settings.dxfFont))}>
             下載 DXF
           </Button>
           <Button
             variant="primary"
             disabled={!sheet || !!busy}
-            onClick={() => void run('輸出 PDF（第一次需下載中文字型，約 7 MB）…', () => downloadPdf([sheet!], fileBase, settings.drawer || undefined))}
+            onClick={() => void run('輸出 PDF（第一次需下載中文字型，約 7 MB）…', () => downloadPdf(sheets!, fileBase, settings.drawer || undefined))}
           >
             下載 PDF
           </Button>
@@ -124,6 +154,13 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
           <label className="flex items-center gap-2 self-end pb-1.5 text-sm text-slate-700">
             <input type="checkbox" checked={showTags} onChange={(e) => setShowTags(e.target.checked)} />
             標號與型號
+          </label>
+          <label
+            className={`col-span-2 flex items-center gap-2 text-sm lg:col-span-1 ${hasDiagram ? 'text-slate-700' : 'text-slate-400'}`}
+            title={hasDiagram ? undefined : '先播放模擬（或執行程序）才有記錄可以畫'}
+          >
+            <input type="checkbox" checked={withDiagram && hasDiagram} disabled={!hasDiagram} onChange={(e) => setWithDiagram(e.target.checked)} />
+            附{diagramMode === 'step' ? '位移－步驟圖' : '位移－時間圖'}（第 2 張）
           </label>
           <label className="block text-xs text-slate-500">
             圖號
@@ -145,6 +182,7 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
             ) : (
               <p className="p-6 text-center text-sm text-slate-500">產生中…</p>
             )}
+            {previewUrl2 && <img src={previewUrl2} alt="位移－步驟圖預覽" className="mx-auto mt-3 max-h-full max-w-full bg-white shadow" />}
           </div>
         </section>
       </div>

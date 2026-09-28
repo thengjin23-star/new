@@ -1,5 +1,5 @@
 import { DEFAULT_SUPPLY_PRESSURE } from './constants'
-import { normalizePath } from './definition'
+import { normalizePath, type InternalPath } from './definition'
 import { widestPaths, type FlowEdge } from './graph'
 import { resolveParams } from './params'
 import { registry as defaultRegistry, type ComponentRegistry } from './registry'
@@ -12,6 +12,9 @@ import {
   type SolveResult,
 } from './types'
 
+/** 依埠狀態決定通路的元件（梭動閥、雙壓閥…）最多重算幾次；正常情況 2～3 次就穩定 */
+const MAX_SETTLE_ROUNDS = 12
+
 /**
  * 依目前的元件狀態，算出每個埠與每條管線的壓力狀態。
  *
@@ -23,6 +26,9 @@ import {
  * 供氣／排氣能力取沿途最窄處（節流開度），壓力取沿途調壓閥的最低設定，
  * 都以最寬路徑計算（多條並聯路徑取最好的一條）。
  *
+ * 通路依埠狀態而定的元件（portPaths：梭動閥、雙壓閥、快速排氣閥）：以上一幀的狀態為起始猜測，
+ * 算出埠狀態後重新決定它們的通路，重複到不再改變，讓邏輯元件的輸出在同一幀內就正確。
+ *
  * 管線是雙向全開的邊，兩端必定得到相同結果，因此管線狀態 = 端點狀態。
  * 端點找不到的管線（例如元件剛被刪除）會被忽略並視為封閉。
  */
@@ -31,15 +37,62 @@ export function solve(
   componentStates: ComponentStates,
   reg: ComponentRegistry = defaultRegistry,
 ): SolveResult {
+  const dynamic = circuit.nodes.filter((n) => reg.get(n.type).portPaths)
+  if (!dynamic.length) return evaluate(circuit, componentStates, reg, new Map())
+
+  const chosen = new Map<string, readonly InternalPath[]>()
+  const keys = new Map<string, string>()
+  const choose = (ports: ((nodeId: string, portId: string) => PortState) | undefined) => {
+    let changed = false
+    for (const node of dynamic) {
+      const def = reg.get(node.type)
+      const params = resolveParams(def, node.params)
+      const state = componentStates[node.id] ?? def.createState(params)
+      const portStates = ports && Object.fromEntries(def.ports.map((p) => [p.id, ports(node.id, p.id)]))
+      const paths = def.portPaths!(portStates ?? {}, state, params)
+      const key = JSON.stringify(paths)
+      if (keys.get(node.id) !== key) {
+        keys.set(node.id, key)
+        chosen.set(node.id, paths)
+        changed = true
+      }
+    }
+    return changed
+  }
+  // 起始猜測：還不知道埠狀態（空物件），元件依自己上一幀的狀態決定
+  choose(undefined)
+  let result = evaluate(circuit, componentStates, reg, chosen)
+  for (let round = 0; round < MAX_SETTLE_ROUNDS; round++) {
+    const current = result
+    if (!choose((node, port) => current.portStates[portKey(node, port)] ?? 'blocked')) break
+    result = evaluate(circuit, componentStates, reg, chosen)
+  }
+  return result
+}
+
+function evaluate(
+  circuit: Circuit,
+  componentStates: ComponentStates,
+  reg: ComponentRegistry,
+  dynamicPaths: ReadonlyMap<string, readonly InternalPath[]>,
+): SolveResult {
   const forward = new Map<PortKey, FlowEdge[]>()
   const backward = new Map<PortKey, FlowEdge[]>()
   const sources = new Map<PortKey, number>()
   const vents = new Map<PortKey, number>()
 
   const addEdge = (from: PortKey, to: PortKey, capacity: number, maxPressure: number) => {
-    if (!(capacity > 0)) return
+    if (!(capacity > 0) || !forward.has(from) || !forward.has(to)) return
     forward.get(from)!.push({ to, capacity, maxPressure })
     backward.get(to)!.push({ to: from, capacity, maxPressure })
+  }
+
+  for (const node of circuit.nodes) {
+    const def = reg.get(node.type)
+    for (const port of def.ports) {
+      forward.set(portKey(node.id, port.id), [])
+      backward.set(portKey(node.id, port.id), [])
+    }
   }
 
   for (const node of circuit.nodes) {
@@ -48,11 +101,8 @@ export function solve(
     const state = componentStates[node.id] ?? def.createState(params)
     const key = (portId: string) => portKey(node.id, portId)
 
-    for (const port of def.ports) {
-      forward.set(key(port.id), [])
-      backward.set(key(port.id), [])
-    }
-    for (const raw of def.getInternalPaths(state, params)) {
+    const paths = [...def.getInternalPaths(state, params), ...(dynamicPaths.get(node.id) ?? [])]
+    for (const raw of paths) {
       const path = normalizePath(raw)
       const capacity = Math.min(1, path.capacity ?? 1)
       addEdge(key(path.from), key(path.to), capacity, path.maxPressure ?? Infinity)
@@ -64,10 +114,8 @@ export function solve(
   }
 
   for (const tube of circuit.tubes) {
-    if (forward.has(tube.from) && forward.has(tube.to)) {
-      addEdge(tube.from, tube.to, 1, Infinity)
-      addEdge(tube.to, tube.from, 1, Infinity)
-    }
+    addEdge(tube.from, tube.to, 1, Infinity)
+    addEdge(tube.to, tube.from, 1, Infinity)
   }
 
   const unit = new Map([...sources.keys()].map((k) => [k, 1]))

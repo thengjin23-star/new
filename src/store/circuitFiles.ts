@@ -6,6 +6,7 @@ import {
   parsePcir,
   PCIR_EXT,
   sanitizeCircuit,
+  sanitizeSequence,
   stripEdge,
   stripNode,
   toPcir,
@@ -19,7 +20,7 @@ export interface CircuitSummary extends CircuitInfo {
   components: number
 }
 
-const summarize = ({ nodes, edges: _edges, ...info }: CircuitDoc): CircuitSummary => ({
+const summarize = ({ nodes, edges: _edges, sequence: _sequence, ...info }: CircuitDoc): CircuitSummary => ({
   ...info,
   components: nodes.filter((n) => n.type === 'pneumatic').length,
 })
@@ -30,8 +31,8 @@ export async function listCircuits(): Promise<CircuitSummary[]> {
 }
 
 function currentDoc(info: CircuitInfo): CircuitDoc {
-  const { nodes, edges } = useCircuitStore.getState()
-  return { ...info, nodes: nodes.map(stripNode), edges: edges.map(stripEdge) }
+  const { nodes, edges, sequence } = useCircuitStore.getState()
+  return { ...info, nodes: nodes.map(stripNode), edges: edges.map(stripEdge), ...(sequence.steps.length > 0 && { sequence }) }
 }
 
 /** 儲存目前電路到電路清單；asNew = 另存新檔（新的 id 與名稱） */
@@ -52,8 +53,8 @@ export async function openCircuit(id: string): Promise<void> {
   const doc = await catalog.getCircuit(id)
   if (!doc) throw new Error('找不到這份迴路圖，可能已被刪除')
   const { nodes, edges } = sanitizeCircuit(doc.nodes, doc.edges)
-  const { nodes: _n, edges: _e, ...info } = doc
-  useCircuitStore.getState().replaceCircuit(nodes, edges, info, true)
+  const { nodes: _n, edges: _e, sequence, ...info } = doc
+  useCircuitStore.getState().replaceCircuit(nodes, edges, info, true, sanitizeSequence(sequence))
 }
 
 export async function deleteCircuit(id: string): Promise<void> {
@@ -81,8 +82,8 @@ export function exportCircuitFile(): void {
 export async function importCircuitFile(file: File): Promise<void> {
   const doc = parsePcir(await file.text())
   const { nodes, edges } = sanitizeCircuit(doc.nodes, doc.edges)
-  const { nodes: _n, edges: _e, ...info } = doc
-  useCircuitStore.getState().replaceCircuit(nodes, edges, info, false)
+  const { nodes: _n, edges: _e, sequence, ...info } = doc
+  useCircuitStore.getState().replaceCircuit(nodes, edges, info, false, sequence)
   useCircuitStore.setState({ dirty: true })
 }
 

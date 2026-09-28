@@ -1,6 +1,7 @@
-import { findUnconnectedPorts, registry } from '../engine'
+import { findUnconnectedPorts, registry, resolveParams, strParam, type Sequence } from '../engine'
 import { effectivePneumatic, pneumaticTypeLabel } from '../catalog/pneumatic'
 import type { Product } from '../catalog/types'
+import { circuitSignalNames } from './circuitSignals'
 import { isPneumaticNode, toCircuit, type CircuitFlowNode, type PneumaticFlowNode, type TubeFlowEdge } from './flow'
 
 export type CheckLevel = 'error' | 'warn' | 'info'
@@ -33,6 +34,7 @@ export function checkCircuit(
   nodes: readonly CircuitFlowNode[],
   edges: readonly TubeFlowEdge[],
   products: Readonly<Record<string, Product>>,
+  sequence?: Sequence,
 ): CircuitCheck[] {
   const result: CircuitCheck[] = []
   const pneumatic = nodes.filter(isPneumaticNode)
@@ -107,6 +109,41 @@ export function checkCircuit(
       })
     }
   }
+
+  // 訊號：氣缸代號重複、滾輪閥沒有觸發位置或沒有對應的氣缸
+  const signals = circuitSignalNames(nodes)
+  const letters = new Map<string, string[]>()
+  for (const n of pneumatic) {
+    const def = registry.get(n.data.componentType)
+    const params = resolveParams(def, n.data.params)
+    if (def.category === 'actuator') {
+      const letter = strParam(params, 'sensor')
+      if (letter) letters.set(letter, [...(letters.get(letter) ?? []), n.id])
+    }
+    if (n.data.componentType === 'valve32Roller') {
+      const trigger = strParam(params, 'trigger')
+      if (!trigger) result.push({ level: 'warn', text: `${nodeTitle(n)} 沒有指定觸發位置（a1…），滾輪不會被壓下`, nodeIds: [n.id] })
+      else if (!signals.sensors.includes(trigger))
+        result.push({
+          level: 'warn',
+          text: `${nodeTitle(n)} 的觸發位置 ${trigger} 沒有對應的氣缸：在氣缸的「位置感測器」選「氣缸 ${trigger[0].toUpperCase()}」`,
+          nodeIds: [n.id],
+        })
+    }
+  }
+  for (const [letter, ids] of letters) {
+    if (ids.length > 1) result.push({ level: 'warn', text: `氣缸代號 ${letter} 重複（${ids.length} 支氣缸），感測器 ${letter.toLowerCase()}0／${letter.toLowerCase()}1 無法分辨`, nodeIds: ids })
+  }
+
+  // 程序：用到電路中沒有的輸出或訊號、沒有轉移條件的步驟
+  sequence?.steps.forEach((st, i) => {
+    const missingOut = Object.keys(st.set).filter((o) => !signals.outputs.includes(o))
+    if (missingOut.length) result.push({ level: 'warn', text: `程序第 ${i + 1} 步的輸出 ${missingOut.join('、')} 沒有接到任何電磁線圈`, nodeIds: [] })
+    const known = [...signals.sensors, ...signals.outputs]
+    const missingCond = st.until.filter((c) => !known.includes(c.replace(/^!/, '')))
+    if (missingCond.length) result.push({ level: 'warn', text: `程序第 ${i + 1} 步的條件 ${missingCond.join('、')} 在電路中找不到對應的感測器`, nodeIds: [] })
+    if (!st.until.length && !st.delay) result.push({ level: 'info', text: `程序第 ${i + 1} 步沒有轉移條件，會立即進入下一步`, nodeIds: [] })
+  })
 
   // 沒有指定型號（資訊）
   const noProduct = pneumatic.filter((n) => !n.data.product && !['airSupply', 'exhaust'].includes(n.data.componentType))

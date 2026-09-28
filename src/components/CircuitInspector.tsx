@@ -302,7 +302,8 @@ function CircuitInfoPanel() {
   const notify = useCircuitUi((s) => s.notify)
   const openDialog = useCircuitUi((s) => s.openDialog)
   const { fitView } = useReactFlow()
-  const checks = useMemo(() => checkCircuit(nodes, edges, products), [nodes, edges, products])
+  const sequence = useCircuitStore((s) => s.sequence)
+  const checks = useMemo(() => checkCircuit(nodes, edges, products, sequence), [nodes, edges, products, sequence])
   const bom = useMemo(() => buildCircuitBom(nodes, products), [nodes, products])
   const total = bomTotal(bom)
 

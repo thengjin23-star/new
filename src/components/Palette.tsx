@@ -17,10 +17,11 @@ const CATEGORY_LABELS: Record<ComponentCategory, string> = {
   source: '氣源與氣源處理',
   valve: '方向控制閥',
   flow: '流量控制',
+  logic: '訊號與邏輯',
   actuator: '致動器',
   misc: '其他',
 }
-const CATEGORY_ORDER: ComponentCategory[] = ['source', 'valve', 'flow', 'actuator', 'misc']
+const CATEGORY_ORDER: ComponentCategory[] = ['source', 'valve', 'flow', 'logic', 'actuator', 'misc']
 
 type Tab = 'components' | 'products'
 const TAB_KEY = 'pneumatic-circuit:palette-tab'

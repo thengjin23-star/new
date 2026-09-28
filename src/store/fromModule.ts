@@ -2,7 +2,7 @@ import { SUPPLY_NODE, type ModuleCircuit, type NetEndpoint } from '../assembly/m
 import type { ProductMap } from '../assembly/moduleOps'
 import type { ModuleDoc } from '../assembly/types'
 import { getSymbol } from '../components/symbols/symbolRegistry'
-import { registry, type CircuitNode } from '../engine'
+import { CYLINDER_LETTERS, OUTPUT_NAMES, registry, VALVE_SPECS, type CircuitNode, type Params, type ValveSpec } from '../engine'
 import { today } from '../utils/date'
 import { newId, type CircuitFlowNode, type PneumaticFlowNode, type TubeFlowEdge } from './flow'
 
@@ -245,6 +245,21 @@ export function circuitFromModule(mc: ModuleCircuit, doc: ModuleDoc, products: P
   if (supply) placed.get(supply.id)!.tag = `0Z${z++}`
   for (const n of prep) if (roles.get(n.id) === 'prep') placed.get(n.id)!.tag = `0Z${z++}`
 
+  // ---- 訊號名稱：依欄的順序，氣缸代號 A、B…，電磁線圈 Y1、Y2…（可直接用於程序控制） ----
+  const signalParams = new Map<string, Params>()
+  let letter = 0
+  let coil = 0
+  columns.forEach((col) => {
+    if (col.actuator && CYLINDER_LETTERS[letter]) signalParams.set(col.actuator.id, { sensor: CYLINDER_LETTERS[letter++] })
+    const valve = col.valve
+    const spec = valve && (VALVE_SPECS as Readonly<Record<string, ValveSpec>>)[valve.type]
+    if (!valve || !spec) return
+    const names: Record<string, string> = {}
+    if (spec.left.includes('solenoid') && OUTPUT_NAMES[coil]) names.coilL = OUTPUT_NAMES[coil++]
+    if (spec.right.includes('solenoid') && OUTPUT_NAMES[coil]) names.coilR = OUTPUT_NAMES[coil++]
+    if (Object.keys(names).length) signalParams.set(valve.id, names)
+  })
+
   // ---- 節點 ----
   const flowNodes: CircuitFlowNode[] = []
   const idMap = new Map<string, string>()
@@ -264,7 +279,9 @@ export function circuitFromModule(mc: ModuleCircuit, doc: ModuleDoc, products: P
         ...(p.tag && { tag: p.tag }),
         ...(p.labelSide && { labelSide: p.labelSide }),
         ...(product && { product: { id: product.id, modelCode: product.modelCode, name: product.name } }),
-        ...(p.node.params && Object.keys(p.node.params).length && { params: { ...p.node.params } }),
+        ...((p.node.params && Object.keys(p.node.params).length) || signalParams.has(p.node.id)
+          ? { params: { ...p.node.params, ...signalParams.get(p.node.id) } }
+          : {}),
       },
     }
     flowNodes.push(node)

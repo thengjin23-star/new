@@ -132,13 +132,16 @@ export function PneumaticFunctionEditor({
         </section>
       )}
 
-      {def?.params && def.params.length > 0 && (
+      {def?.params && def.params.some((p) => !p.circuitOnly) && (
         <section>
           <h4 className="mb-1 text-xs font-semibold text-slate-600">參數（空白 = 預設值）</h4>
           <div className="grid grid-cols-2 gap-2">
-            {def.params.map((p) => (
-              <ParamInput key={p.key} def={p} value={value?.params?.[p.key]} onChange={(raw) => setParam(p, raw)} />
-            ))}
+            {/* 訊號名稱（線圈 Y1、氣缸代號…）在迴路圖中設定，產品不列出 */}
+            {def.params
+              .filter((p) => !p.circuitOnly)
+              .map((p) => (
+                <ParamInput key={p.key} def={p} value={value?.params?.[p.key]} onChange={(raw) => setParam(p, raw)} />
+              ))}
           </div>
         </section>
       )}

@@ -13,16 +13,24 @@ import {
   findUnconnectedExhaustPorts,
   interact,
   registry,
+  runSequence,
+  SEQUENCER_IDLE,
+  setOutputs,
   solve,
   step,
+  stepSequence,
+  stopSequence,
+  tickSequence,
   type Circuit,
   type InteractAction,
   type Params,
   type ParamValue,
   type PortKey,
+  type Sequence,
+  type SequencerState,
   type SimState,
 } from '../engine'
-import { createCircuitInfo, sanitizeCircuit, stripEdge, stripNode, type CircuitInfo } from './circuitDoc'
+import { createCircuitInfo, EMPTY_SEQUENCE, sanitizeCircuit, sanitizeSequence, stripEdge, stripNode, type CircuitInfo } from './circuitDoc'
 import {
   isPneumaticNode,
   isValidTube,
@@ -36,7 +44,9 @@ import {
   type ProductRef,
   type TubeFlowEdge,
 } from './flow'
+import { assignSignalNames } from './signalNames'
 import { dedupeTag, nextTag } from './tags'
+import { createTrace, recordTrace, type Trace } from './trace'
 
 /**
  * - idle：編輯模式，可放元件、拉管線、旋轉、刪除
@@ -66,6 +76,8 @@ const EMPTY_SIM: SimState = {
   supplyFlow: {},
   ventFlow: {},
   pressure: {},
+  outputs: {},
+  signals: {},
 }
 const EMPTY_CIRCUIT: Circuit = { nodes: [], tubes: [] }
 const GRID = 8
@@ -98,6 +110,12 @@ export interface CircuitStore {
   circuit: Circuit
   /** 模擬時沒有接排氣口的排氣埠（UI 以琥珀色標示） */
   unconnectedExhausts: PortKey[]
+  /** 程序控制的步驟（存在電路文件中） */
+  sequence: Sequence
+  /** 程序控制的執行狀態 */
+  seq: SequencerState
+  /** 位移－步驟圖的記錄（播放時開始記錄；重置後保留到下一次播放） */
+  trace?: Trace
 
   onNodesChange(changes: NodeChange<CircuitFlowNode>[]): void
   onEdgesChange(changes: EdgeChange<TubeFlowEdge>[]): void
@@ -123,7 +141,7 @@ export interface CircuitStore {
   undo(): void
   redo(): void
   /** 以新的電路取代目前的電路（開新電路、開啟檔案、載入範例）；清除復原記錄 */
-  replaceCircuit(nodes: CircuitFlowNode[], edges: TubeFlowEdge[], info?: CircuitInfo, stored?: boolean): void
+  replaceCircuit(nodes: CircuitFlowNode[], edges: TubeFlowEdge[], info?: CircuitInfo, stored?: boolean, sequence?: Sequence): void
   setInfo(patch: Partial<Pick<CircuitInfo, 'name' | 'customer' | 'notes' | 'drawingNo' | 'revision' | 'paper'>>): void
   /** 已存進電路清單 */
   markStored(info: CircuitInfo): void
@@ -136,6 +154,17 @@ export interface CircuitStore {
   interact(nodeId: string, action?: InteractAction): void
   /** 模擬中調整參數（節流開度、設定壓力），立即生效 */
   setLiveParam(nodeId: string, key: string, value: ParamValue): void
+
+  /** 修改程序（程序停止時才能修改） */
+  setSequence(sequence: Sequence): void
+  /** 程序自動執行（還沒播放時先開始模擬） */
+  seqAuto(): void
+  /** 程序單步 */
+  seqStep(): void
+  seqStop(): void
+  /** 復歸：停止程序、輸出全部 OFF、元件回到初始狀態（模擬繼續） */
+  seqHome(): void
+  setContinuous(on: boolean): void
 }
 
 const snap = (v: number) => Math.round(v / GRID) * GRID
@@ -194,6 +223,9 @@ export const useCircuitStore = create<CircuitStore>()(
         sim: EMPTY_SIM,
         circuit: EMPTY_CIRCUIT,
         unconnectedExhausts: [],
+        sequence: EMPTY_SEQUENCE,
+        seq: SEQUENCER_IDLE,
+        trace: undefined,
 
         onNodesChange(changes) {
           const allowed = editable() ? changes : changes.filter((c) => !EDITING_ONLY.has(c.type))
@@ -234,7 +266,9 @@ export const useCircuitStore = create<CircuitStore>()(
           const tag = nextTag(nodes, type)
           if (tag) data.tag = tag
           if (options?.product) data.product = options.product
-          if (options?.params && Object.keys(options.params).length) data.params = { ...options.params }
+          // 電磁線圈、氣缸代號、壓力開關自動接上下一個沒用過的訊號名稱（Y1、A、PS1…）
+          const params = assignSignalNames(nodes, type, options?.params)
+          if (params && Object.keys(params).length) data.params = { ...params }
           const node: PneumaticFlowNode = {
             id: newId('n'),
             type: 'pneumatic',
@@ -312,8 +346,10 @@ export const useCircuitStore = create<CircuitStore>()(
           pushHistory()
           const ports = new Set(registry.get(type).ports.map((p) => p.id))
           const keep = (nodeId: string, handle: string | null | undefined) => nodeId !== id || ports.has(handle ?? '')
+          // 新類型多出的線圈（例如單電控改雙電控）接上下一個沒用過的輸出
+          const params = assignSignalNames(get().nodes, type, node.data.params, new Set([id]))
           set({
-            nodes: mapPneumatic((n) => ({ ...n, data: { ...n.data, componentType: type } }), (n) => n.id === id),
+            nodes: mapPneumatic((n) => ({ ...n, data: { ...n.data, componentType: type, ...(params && { params }) } }), (n) => n.id === id),
             edges: get().edges.filter((e) => keep(e.source, e.sourceHandle) && keep(e.target, e.targetHandle)),
           })
         },
@@ -357,12 +393,13 @@ export const useCircuitStore = create<CircuitStore>()(
             const id = newId(n.type === 'note' ? 'm' : 'n')
             idMap.set(n.id, id)
             const position = { x: n.position.x + offset, y: n.position.y + offset }
+            const params = isPneumaticNode(n) ? assignSignalNames(nodes, n.data.componentType, n.data.params) : undefined
             const copy: CircuitFlowNode = isPneumaticNode(n)
               ? {
                   id,
                   type: 'pneumatic',
                   position,
-                  data: { ...n.data, tag: dedupeTag(nodes, n.data.componentType, n.data.tag) },
+                  data: { ...n.data, tag: dedupeTag(nodes, n.data.componentType, n.data.tag), ...(params && { params }) },
                   selected: true,
                 }
               : { id, type: 'note', position, data: { ...n.data }, selected: true }
@@ -407,9 +444,9 @@ export const useCircuitStore = create<CircuitStore>()(
           lastPush = { at: 0, key: undefined }
         },
 
-        replaceCircuit(nodes, edges, info = createCircuitInfo(), stored = false) {
+        replaceCircuit(nodes, edges, info = createCircuitInfo(), stored = false, sequence = EMPTY_SEQUENCE) {
           get().reset()
-          set({ nodes, edges, info, stored, dirty: false, past: [], future: [] })
+          set({ nodes, edges, info, stored, dirty: false, past: [], future: [], sequence, seq: SEQUENCER_IDLE, trace: undefined })
         },
 
         setInfo(patch) {
@@ -432,12 +469,14 @@ export const useCircuitStore = create<CircuitStore>()(
             return
           }
           const circuit = toCircuit(nodes, edges)
-          const initial = createInitialState(circuit)
+          // 先算一次（dt = 0），讓按下播放的瞬間管線就有顏色、感測器就有訊號
+          const sim = step(circuit, createInitialState(circuit), 0)
           set({
             status: 'running',
             circuit,
-            // 先 solve 一次，讓按下播放的瞬間管線就有顏色
-            sim: { ...initial, ...solve(circuit, initial.componentStates) },
+            sim,
+            seq: { ...SEQUENCER_IDLE, continuous: get().seq.continuous },
+            trace: createTrace(nodes, circuit, sim),
             unconnectedExhausts: findUnconnectedExhaustPorts(circuit),
             // 進入模擬模式時取消選取，避免選取框干擾畫面
             nodes: deselected(nodes),
@@ -450,12 +489,26 @@ export const useCircuitStore = create<CircuitStore>()(
         },
 
         reset() {
-          set({ status: 'idle', sim: EMPTY_SIM, circuit: EMPTY_CIRCUIT, unconnectedExhausts: [] })
+          set({
+            status: 'idle',
+            sim: EMPTY_SIM,
+            circuit: EMPTY_CIRCUIT,
+            unconnectedExhausts: [],
+            seq: { ...SEQUENCER_IDLE, continuous: get().seq.continuous },
+          })
         },
 
         tick(dt) {
-          const { status, circuit, sim } = get()
-          if (status === 'running') set({ sim: step(circuit, sim, dt) })
+          const { status, circuit, sim, sequence, seq, trace } = get()
+          if (status !== 'running') return
+          let next = step(circuit, sim, dt)
+          let seqState = seq
+          if (seq.mode !== 'off') {
+            const r = tickSequence(sequence, seq, next.signals, dt)
+            seqState = r.state
+            if (r.set) next = setOutputs(circuit, next, r.set)
+          }
+          set({ sim: next, seq: seqState, ...(trace && { trace: recordTrace(trace, next, seqState, sequence) }) })
         },
 
         interact(nodeId, action) {
@@ -479,6 +532,47 @@ export const useCircuitStore = create<CircuitStore>()(
           }
           set({ circuit: next, sim: { ...sim, ...solve(next, sim.componentStates) } })
         },
+
+        setSequence(sequence) {
+          if (get().seq.mode !== 'off') return
+          set({ sequence, dirty: true })
+        },
+
+        seqAuto() {
+          if (!get().sequence.steps.length) return
+          if (get().status === 'idle') get().play()
+          else if (get().status === 'paused') set({ status: 'running' })
+          applySequencer(runSequence(get().sequence, get().seq, get().seq.continuous))
+        },
+
+        seqStep() {
+          if (!get().sequence.steps.length) return
+          if (get().status === 'idle') get().play()
+          else if (get().status === 'paused') set({ status: 'running' })
+          applySequencer(stepSequence(get().sequence, get().seq, get().sim.signals))
+        },
+
+        seqStop() {
+          set({ seq: stopSequence(get().seq) })
+        },
+
+        seqHome() {
+          const { status, circuit, nodes, seq } = get()
+          if (status === 'idle') return
+          const sim = step(circuit, createInitialState(circuit), 0)
+          set({ sim, seq: { ...SEQUENCER_IDLE, continuous: seq.continuous }, trace: createTrace(nodes, circuit, sim) })
+        },
+
+        setContinuous(on) {
+          set({ seq: { ...get().seq, continuous: on } })
+        },
+      }
+
+      /** 套用程序控制的結果：更新狀態、設定新一步的輸出，並記錄到位移－步驟圖 */
+      function applySequencer(r: { state: SequencerState; set?: Readonly<Record<string, boolean>> }) {
+        const { circuit, sim, sequence, trace } = get()
+        const next = r.set ? setOutputs(circuit, sim, r.set) : sim
+        set({ seq: r.state, sim: next, ...(trace && { trace: recordTrace(trace, next, r.state, sequence) }) })
       }
     },
     {
@@ -493,17 +587,19 @@ export const useCircuitStore = create<CircuitStore>()(
         stored: s.stored,
         dirty: s.dirty,
         view: s.view,
+        sequence: s.sequence,
       }),
       // v1 只有 nodes／edges；其餘欄位用預設值
       migrate: (persisted) => persisted as object,
       // 讀回時丟掉已不存在的元件 type 與懸空的管線，避免舊存檔讓畫面崩潰
       merge: (persisted, current) => {
-        const saved = (persisted ?? {}) as Partial<Pick<CircuitStore, 'nodes' | 'edges' | 'info' | 'stored' | 'dirty' | 'view'>>
+        const saved = (persisted ?? {}) as Partial<Pick<CircuitStore, 'nodes' | 'edges' | 'info' | 'stored' | 'dirty' | 'view' | 'sequence'>>
         const { nodes, edges } = sanitizeCircuit(saved.nodes, saved.edges)
         return {
           ...current,
           nodes,
           edges,
+          sequence: sanitizeSequence(saved.sequence),
           info: saved.info?.id ? saved.info : current.info,
           stored: !!saved.stored,
           dirty: !!saved.dirty,
