@@ -157,8 +157,15 @@ export interface PlanResult {
   errors: string[]
 }
 
+/** 由氣缸埠往回找到的管路：驅動它的閥埠，以及沿途經過的埠（管線、速控閥等流量控制元件） */
+export interface TracedLine {
+  valve?: { node: string; port: string }
+  /** 經過的埠（含起點；不含閥） */
+  ports: PortKey[]
+}
+
 /** 找出驅動某個氣缸埠的閥與閥的埠：沿管線與流量控制元件（速控閥、快速排氣閥…）往回找 */
-function drivingValvePort(circuit: Circuit, start: PortKey, reg: ComponentRegistry): { node: string; port: string } | undefined {
+export function traceLine(circuit: Circuit, start: PortKey, reg: ComponentRegistry = defaultRegistry): TracedLine {
   const adjacency = new Map<PortKey, PortKey[]>()
   const link = (a: PortKey, b: PortKey) => {
     adjacency.set(a, [...(adjacency.get(a) ?? []), b])
@@ -173,7 +180,9 @@ function drivingValvePort(circuit: Circuit, start: PortKey, reg: ComponentRegist
     for (let i = 1; i < through.length; i++) link(through[0], through[i])
   }
   const seen = new Set<PortKey>([start])
+  const ports: PortKey[] = [start]
   const queue = [start]
+  let valve: TracedLine['valve']
   while (queue.length) {
     const cur = queue.shift()!
     for (const next of adjacency.get(cur) ?? []) {
@@ -182,13 +191,14 @@ function drivingValvePort(circuit: Circuit, start: PortKey, reg: ComponentRegist
       const [nodeId, port] = [next.slice(0, next.indexOf(':')), next.slice(next.indexOf(':') + 1)]
       const node = nodeOf.get(nodeId)
       if (node && reg.get(node.type).category === 'valve') {
-        if (reg.get(node.type).ports.find((p) => p.id === port)?.role === 'working') return { node: nodeId, port }
+        if (!valve && reg.get(node.type).ports.find((p) => p.id === port)?.role === 'working') valve = { node: nodeId, port }
         continue
       }
+      ports.push(next)
       queue.push(next)
     }
   }
-  return undefined
+  return { valve, ports }
 }
 
 /** 要讓閥的某個工作埠有壓，兩側線圈各要 ON 還是 OFF；閥不是電磁閥或線圈沒有命名時回傳錯誤 */
@@ -248,7 +258,7 @@ export function planSequence(
     const ports = reg.get(node.type).ports.map((p) => p.id)
     // 伸出：A 有壓；縮回：B 有壓（單動氣缸沒有 B：讓 A 排氣）
     const target = m.dir > 0 || ports.includes('B') ? (m.dir > 0 ? 'A' : 'B') : 'A'
-    const found = drivingValvePort(circuit, portKey(cyl, target), reg)
+    const found = traceLine(circuit, portKey(cyl, target), reg).valve
     if (!found) {
       errors.push(`氣缸 ${m.letter}（${describe(cyl)}）的 ${target} 埠沒有接到方向控制閥`)
       return undefined

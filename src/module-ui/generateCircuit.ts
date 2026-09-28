@@ -1,5 +1,5 @@
 import { deriveModuleCircuit, SUPPLY_NODE } from '../assembly/moduleCircuit'
-import { createCircuitInfo } from '../store/circuitDoc'
+import { createCircuitInfo, EMPTY_SEQUENCE } from '../store/circuitDoc'
 import { useCircuitStore } from '../store/circuitStore'
 import { useCircuitUi } from '../store/circuitUi'
 import { circuitFromModule } from '../store/fromModule'
@@ -18,15 +18,19 @@ export function generateCircuitFromModule(): string | undefined {
   if (circuit.nodes.length && (circuit.dirty || !circuit.stored) && !window.confirm('迴路圖分頁有未儲存的電路，要以模組產生的迴路圖取代嗎？')) return undefined
   const { nodes, edges } = circuitFromModule(mc, doc, products)
   if (circuit.status !== 'idle') circuit.reset()
-  circuit.replaceCircuit(nodes, edges, { ...createCircuitInfo(`${doc.name}（迴路圖）`), customer: doc.customer })
+  // 程序以訊號名稱（Y1、a1…）描述，迴路圖沿用模組的名稱，所以可以直接帶過去
+  const sequence = doc.sequence ?? EMPTY_SEQUENCE
+  circuit.replaceCircuit(nodes, edges, { ...createCircuitInfo(`${doc.name}（迴路圖）`), customer: doc.customer }, false, sequence)
   window.location.hash = '#/'
   const missingSupply = mc.warnings.some((w) => w.kind === 'no-supply')
-  useCircuitUi
-    .getState()
-    .notify(
-      missingSupply
-        ? `已由模組「${doc.name}」產生迴路圖。模組沒有指定供氣口，請加入氣源後再模擬。`
+  const ui = useCircuitUi.getState()
+  if (sequence.steps.length) ui.toggleSequence(true)
+  ui.notify(
+    missingSupply
+      ? `已由模組「${doc.name}」產生迴路圖。模組沒有指定供氣口，請加入氣源後再模擬。`
+      : sequence.steps.length
+        ? `已由模組「${doc.name}」產生迴路圖，並帶入 ${sequence.steps.length} 個程序步驟：按「自動」就能執行。`
         : `已由模組「${doc.name}」產生迴路圖，可以直接按「播放」模擬。`,
-    )
+  )
   return undefined
 }

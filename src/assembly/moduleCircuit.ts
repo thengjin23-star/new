@@ -8,7 +8,8 @@ import type { ModuleDoc } from './types'
 /**
  * 由 3D 模組推出氣動迴路（給 3D 模擬與「產生迴路圖」使用）：
  *
- * - 有氣動功能的零件（閥、氣缸、速控閥、消音器、三點組合…）是迴路的元件，功能埠依 portMap 對到產品的埠
+ * - 有氣動功能的零件（閥、氣缸、速控閥、消音器、三點組合…）是迴路的元件，功能埠依 portMap 對到產品的埠；
+ *   參數 = 產品氣動功能的參數，再以零件在模組中的參數（ModuleInstance.params）覆蓋
  * - 鎖合、接頭（氣流直接通過）、PU 管把產品的埠連成「網路」（union-find）
  * - 集裝座：底板式閥裝在某一站時，閥的 P／EA／EB 接到共用通路、A／B 接到該站出口
  * - 供氣口：模組指定的埠接上一個氣源
@@ -149,7 +150,8 @@ export function deriveModuleCircuit(doc: ModuleDoc, products: ProductMap): Modul
     }
     if (fn.type === MANIFOLD_TYPE || !registry.has(fn.type)) continue
     const def = registry.get(fn.type)
-    nodes.push({ id: inst.id, type: fn.type, params: fn.params })
+    // 零件在模組中的參數（氣缸代號、線圈訊號、負載…）覆蓋產品的參數
+    nodes.push({ id: inst.id, type: fn.type, params: inst.params ? { ...fn.params, ...inst.params } : fn.params })
     nodeInstance[inst.id] = inst.id
     const piping = product.ports.filter((p) => p.spec?.kind !== 'interface')
     if (!piping.length && product.ports.some((p) => p.spec?.kind === 'interface')) {

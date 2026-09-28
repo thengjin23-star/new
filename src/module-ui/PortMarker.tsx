@@ -1,4 +1,4 @@
-import { Html } from '@react-three/drei'
+import { OverlayHtml } from './OverlayHtml'
 import type { ThreeEvent } from '@react-three/fiber'
 import { useMemo } from 'react'
 import { Quaternion, Vector3 } from 'three'
@@ -102,7 +102,7 @@ export function PortMarker({ instanceId, port, showLabel }: { instanceId: string
         </group>
       )}
       {!simState && (showLabel || isFrom || candidate || tubeCandidate || isSupply) && (
-        <Html position={[0, stem + 4 * s + 2, 0]} center zIndexRange={[20, 0]}>
+        <OverlayHtml position={[0, stem + 4 * s + 2, 0]} center zIndexRange={[20, 0]}>
           <button
             type="button"
             data-port-label={`${instanceId}:${port.id}`}
@@ -118,7 +118,7 @@ export function PortMarker({ instanceId, port, showLabel }: { instanceId: string
           >
             {label}
           </button>
-        </Html>
+        </OverlayHtml>
       )}
     </group>
   )

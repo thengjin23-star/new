@@ -1,7 +1,8 @@
 import { effectivePneumatic } from '../catalog/pneumatic'
 import type { Tessellation } from '../catalog/tessellation'
 import type { Product } from '../catalog/types'
-import { numParam, portKey, registry, resolveParams, VALVE_SPECS, type PortState } from '../engine'
+import { useShallow } from 'zustand/react/shallow'
+import { numParam, portKey, registry, resolveParams, sensorName, strParam, VALVE_SPECS, type PortState } from '../engine'
 import type { Vec3 } from '../geometry/vec3'
 import { useModuleStore } from './moduleStore'
 
@@ -33,6 +34,51 @@ export function useSimPiston(nodeId: string): number | undefined {
     const st = s.sim?.state.componentStates[nodeId] as { piston?: number } | undefined
     return typeof st?.piston === 'number' ? st.piston : undefined
   })
+}
+
+/**
+ * 模擬中零件的訊號標籤：氣缸顯示代號與 a0／a1 燈號，電磁閥顯示線圈的輸出（Y1…），壓力開關顯示 PS…。
+ * 回傳 [標題, "名稱:0|1", …]（扁平陣列，訊號沒有變化時不重繪）；沒有訊號時 undefined。
+ */
+export function useSimSignalChip(nodeId: string): string[] | undefined {
+  return useModuleStore(
+    useShallow((s) => {
+      const sim = s.sim
+      const node = sim?.mc.circuit.nodes.find((n) => n.id === nodeId)
+      if (!sim || !node || !registry.has(node.type)) return undefined
+      const def = registry.get(node.type)
+      const params = resolveParams(def, node.params)
+      const lamp = (name: string) => `${name}:${sim.state.signals[name] ? 1 : 0}`
+      if (def.category === 'actuator') {
+        const letter = strParam(params, 'sensor')
+        return letter ? [letter, lamp(sensorName(letter, 0)), lamp(sensorName(letter, 1))] : undefined
+      }
+      const coils = (['coilL', 'coilR'] as const).filter((k) => def.params?.some((p) => p.key === k)).map((k) => strParam(params, k)).filter(Boolean)
+      if (coils.length) return ['', ...coils.map(lamp)]
+      if (node.type === 'pressureSwitch') {
+        const name = strParam(params, 'signal')
+        return name ? ['', lamp(name)] : undefined
+      }
+      return undefined
+    }),
+  )
+}
+
+/** 網格的外框中心（零件座標），用來擺放標籤 */
+export function meshCenter(mesh: Tessellation): Vec3 {
+  const min: Vec3 = [Infinity, Infinity, Infinity]
+  const max: Vec3 = [-Infinity, -Infinity, -Infinity]
+  for (const part of mesh.parts) {
+    const pos = part.positions
+    for (let k = 0; k < pos.length; k += 3) {
+      for (let a = 0; a < 3; a++) {
+        const v = pos[k + a]
+        if (v < min[a]) min[a] = v
+        if (v > max[a]) max[a] = v
+      }
+    }
+  }
+  return min[0] <= max[0] ? [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2] : [0, 0, 0]
 }
 
 /** 閥是否離開靜止位（通電或切換中），用來在 3D 上標示 */

@@ -6,6 +6,7 @@ import { CircuitDialogs, CircuitToast } from './CircuitDialogs'
 import { CircuitInspector } from './CircuitInspector'
 import { PanelIcon } from './icons'
 import { Palette } from './Palette'
+import { circuitSequenceHost } from './sequence/circuitSequenceHost'
 import { SequencePanel } from './sequence/SequencePanel'
 import { Toolbar } from './Toolbar'
 import { useCircuitUi } from '../store/circuitUi'
@@ -41,7 +42,7 @@ export function CircuitWorkspace() {
                 屬性
               </button>
             </div>
-            <SequencePanel />
+            <CircuitSequencePanel />
           </main>
           <CircuitInspector />
         </div>
@@ -49,6 +50,12 @@ export function CircuitWorkspace() {
       </div>
     </ReactFlowProvider>
   )
+}
+
+/** 程序控制面板（工具列「程序」開關） */
+function CircuitSequencePanel() {
+  const open = useCircuitUi((u) => u.sequenceOpen)
+  return open ? <SequencePanel host={circuitSequenceHost} /> : null
 }
 
 /** 開發模式專用：讓自動化測試讀取迴路圖的狀態 */

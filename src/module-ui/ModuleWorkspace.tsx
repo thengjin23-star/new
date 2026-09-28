@@ -10,6 +10,8 @@ import { PortEditor } from './PortEditor'
 import { Button } from '../components/ui'
 import { Viewport } from './Viewport'
 import { SimulationPanel } from './SimulationPanel'
+import { SequencePanel } from '../components/sequence/SequencePanel'
+import { moduleSequenceHost } from './moduleSequenceHost'
 import { useModuleBounds } from './useModuleBounds'
 import { formatMm } from './bounds'
 import { getPort } from '../assembly/moduleOps'
@@ -58,22 +60,25 @@ export default function ModuleWorkspace() {
       <ModuleToolbar />
       <div className="relative flex min-h-0 flex-1">
         <LibraryPanel />
-        <main className="relative min-w-0 flex-1 bg-slate-100">
-          {status === 'loading' ? (
-            <div className="flex h-full items-center justify-center text-sm text-slate-500">載入產品庫…</div>
-          ) : (
-            <Viewport />
-          )}
-          <HintBar />
-          <SimulationPanel />
-          <DimensionsBadge />
-          <EmptyState />
-          <Toast />
-          {dragging && (
-            <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-500 bg-blue-50/70 text-lg font-medium text-blue-800">
-              放開以匯入 STEP／IGES（或 .plib／.pmod）
-            </div>
-          )}
+        <main className="relative flex min-w-0 flex-1 flex-col bg-slate-100">
+          <div className="relative min-h-0 flex-1">
+            {status === 'loading' ? (
+              <div className="flex h-full items-center justify-center text-sm text-slate-500">載入產品庫…</div>
+            ) : (
+              <Viewport />
+            )}
+            <HintBar />
+            <SimulationPanel />
+            <DimensionsBadge />
+            <EmptyState />
+            <Toast />
+            {dragging && (
+              <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-500 bg-blue-50/70 text-lg font-medium text-blue-800">
+                放開以匯入 STEP／IGES（或 .plib／.pmod）
+              </div>
+            )}
+          </div>
+          <ModuleSequencePanel />
         </main>
         <Inspector />
       </div>
@@ -81,6 +86,12 @@ export default function ModuleWorkspace() {
       <MateDialog />
     </div>
   )
+}
+
+/** 程序控制面板（工具列「程序」開關），在 3D 畫面下方 */
+function ModuleSequencePanel() {
+  const open = useModuleStore((s) => s.sequenceOpen)
+  return open ? <SequencePanel host={moduleSequenceHost} /> : null
 }
 
 function useKeyboard() {

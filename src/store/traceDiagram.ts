@@ -10,6 +10,8 @@ export type DiagramMode = 'step' | 'time'
 
 export interface DiagramRow {
   label: string
+  /** 顯示用的標籤：一行放不下時分成兩行（代號、說明），說明太長時截斷 */
+  lines: string[]
   kind: 'cylinder' | 'output'
   top: number
   height: number
@@ -47,6 +49,32 @@ const GAP = 12
 
 const TIME_TICKS = [0.5, 1, 2, 5, 10, 20, 30, 60, 120]
 
+/** 標籤欄的字級（px）：第一行、第二行（說明） */
+export const LABEL_SIZE = 11
+export const LABEL_SUB_SIZE = 9
+
+/** 估計文字寬度（px）：中日韓文字與全形符號約一個字寬，其他約 0.6 個字寬 */
+export function textWidth(text: string, size: number): number {
+  let w = 0
+  for (const ch of text) w += (ch.codePointAt(0) ?? 0) >= 0x2e80 ? size : size * 0.6
+  return w
+}
+
+function fitText(text: string, max: number, size: number): string {
+  if (textWidth(text, size) <= max) return text
+  const chars = [...text]
+  while (chars.length > 1 && textWidth(`${chars.join('')}…`, size) > max) chars.pop()
+  return `${chars.join('')}…`
+}
+
+/** 列的標籤：放得下就一行；否則「A（DEMO-CYL-16-50）」分成代號與說明兩行，太長的截斷 */
+export function labelLines(label: string, max: number, twoLines = true): string[] {
+  if (textWidth(label, LABEL_SIZE) <= max) return [label]
+  const m = /^(.*?)（(.*)）$/.exec(label)
+  if (!m || !twoLines) return [fitText(label, max, LABEL_SIZE)]
+  return [fitText(m[1], max, LABEL_SIZE), fitText(m[2], max, LABEL_SUB_SIZE)]
+}
+
 export interface DiagramOptions {
   /** 步驟圖優先畫最近一個完整的循環（出圖用） */
   preferComplete?: boolean
@@ -63,7 +91,8 @@ export function diagramGeometry(trace: Trace, mode: DiagramMode, width: number, 
   let y = TOP
   for (const r of trace.rows) {
     const h = r.kind === 'cylinder' ? (options.cylinderHeight ?? CYL_H) : (options.outputHeight ?? OUT_H)
-    rows.push({ label: r.label, kind: r.kind, top: y, height: h, points: [] })
+    // 兩行標籤需要約 24 px 的列高
+    rows.push({ label: r.label, lines: labelLines(r.label, left - 12, h >= 24), kind: r.kind, top: y, height: h, points: [] })
     y += h + GAP
   }
   const height = y + 4

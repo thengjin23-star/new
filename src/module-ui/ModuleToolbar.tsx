@@ -17,7 +17,8 @@ export function ModuleToolbar() {
   const drawer = useModuleStore((s) => s.drawer)
   const mode = useModuleStore((s) => s.mode)
   const drawingOpen = useModuleStore((s) => s.drawingOpen)
-  const { newModule, undo, redo, requestFit, exportModuleFile, renameModule, toggleDrawer, setMode, openDrawing } = useModuleStore.getState()
+  const sequenceOpen = useModuleStore((s) => s.sequenceOpen)
+  const { newModule, undo, redo, requestFit, exportModuleFile, renameModule, toggleDrawer, setMode, openDrawing, toggleSequencePanel } = useModuleStore.getState()
   const [listOpen, setListOpen] = useState(false)
   const [stepOpen, setStepOpen] = useState(false)
 
@@ -50,6 +51,13 @@ export function ModuleToolbar() {
         onClick={() => setMode(mode === 'simulate' ? 'select' : 'simulate')}
         disabled={doc.instances.length === 0}
         title="依模組的氣路模擬：點閥切換、氣缸動作"
+      />
+      <BarButton
+        label="程序"
+        aria-pressed={sequenceOpen}
+        onClick={() => toggleSequencePanel()}
+        disabled={doc.instances.length === 0}
+        title="程序控制：動作順序（A+ B+ B- A-）、自動／單步執行、位移－步驟圖"
       />
       <BarButton
         label={mode === 'tube' ? '結束接管' : '接 PU 管'}

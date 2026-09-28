@@ -4,7 +4,7 @@ import { createInitialState, SEQUENCER_IDLE, step, type Sequence, type Sequencer
 import { CIRCUIT_EXAMPLES } from '../../fixtures/examples'
 import { toCircuit } from '../flow'
 import { createTrace, lastCycle, recordTrace, type Trace } from '../trace'
-import { DIAGRAM_LEFT, diagramGeometry } from '../traceDiagram'
+import { DIAGRAM_LEFT, diagramGeometry, labelLines, textWidth } from '../traceDiagram'
 
 const sequence: Sequence = {
   steps: [
@@ -85,6 +85,16 @@ describe('位移－步驟圖的記錄', () => {
     const complete = lastCycle(partial, 2.5, true)!
     expect(complete.complete).toBe(true)
     expect(complete.steps.map((s) => s.label)).toEqual(['A+', 'A−'])
+  })
+
+  it('列的標籤：放不下一行時分成代號與說明兩行，太長的截斷', () => {
+    expect(labelLines('A（1A1）', 66)).toEqual(['A（1A1）'])
+    expect(labelLines('A（DEMO-CYL-16-50）', 66)).toEqual(['A', 'DEMO-CYL-16…'])
+    expect(labelLines('A（DEMO-CYL-16-50）', 66, false)).toEqual(['A（DEMO-C…'])
+    const trace = { ...syntheticTrace(), rows: [{ key: 'c', label: 'A（DEMO-CYL-16-50）', kind: 'cylinder' as const }, { key: 'Y1', label: 'Y1', kind: 'output' as const }] }
+    const g = diagramGeometry(trace, 'step', 400, 2)
+    expect(g.rows.map((r) => r.lines)).toEqual([['A', 'DEMO-CYL-16…'], ['Y1']])
+    for (const r of g.rows) for (const [i, line] of r.lines.entries()) expect(textWidth(line, i ? 9 : 11)).toBeLessThanOrEqual(g.left - 12)
   })
 
   it('還沒有執行程序時，步驟圖說明原因', () => {

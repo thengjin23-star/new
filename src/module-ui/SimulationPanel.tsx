@@ -87,6 +87,7 @@ export function SimulationPanel() {
         </ul>
       )}
       {!supply && <p className="leading-5 text-slate-500">在「零件」頁選一個埠按「設為供氣口」，模擬就會從那裡供氣。</p>}
+      <ProgramLine />
       <div className="flex gap-2">
         <Button size="sm" onClick={toggleSimulationPause}>
           {sim.paused ? '繼續' : '暫停'}
@@ -99,5 +100,31 @@ export function SimulationPanel() {
         </Button>
       </div>
     </section>
+  )
+}
+
+/** 程序控制的摘要：目前步驟，或還沒有設定程序 */
+function ProgramLine() {
+  const text = useModuleStore((s) => {
+    const steps = s.doc.sequence?.steps ?? []
+    if (s.seq.index >= 0) {
+      const step = steps[s.seq.index]
+      return `程序：步驟 ${s.seq.index + 1}／${steps.length}${step?.label ? ` ${step.label}` : ''}${s.seq.mode === 'off' ? '（已停止）' : ''}`
+    }
+    if (s.seq.cycles > 0) return `程序：完成 ${s.seq.cycles} 個循環`
+    return steps.length ? `程序：${steps.length} 個步驟` : '還沒有設定程序（例如 A+ B+ B- A-）'
+  })
+  const open = useModuleStore((s) => s.sequenceOpen)
+  return (
+    <div className="flex items-center gap-2 rounded bg-slate-50 px-2 py-1">
+      <span className="min-w-0 flex-1 leading-4 text-slate-600" data-program-summary>
+        {text}
+      </span>
+      {!open && (
+        <Button size="sm" onClick={() => useModuleStore.getState().toggleSequencePanel(true)}>
+          程序…
+        </Button>
+      )}
+    </div>
   )
 }

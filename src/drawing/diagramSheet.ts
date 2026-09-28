@@ -81,7 +81,9 @@ export function layoutDiagramSheet(input: DiagramSheetInput): Sheet {
   for (const r of g.rows) {
     d.line([X(g.left), Y(r.top)], [X(g.right), Y(r.top)], 'DIM', 0.18)
     d.line([X(g.left), Y(r.top + r.height)], [X(g.right), Y(r.top + r.height)], 'DIM', 0.18)
-    d.text([X(g.left - 8), Y(r.top + r.height / 2)], r.label, text(11), { align: 'right', valign: 'middle' })
+    // 標籤放不下一行時分成代號與說明兩行（與畫面相同）
+    d.text([X(g.left - 8), Y(r.top + r.height / 2 - (r.lines.length > 1 ? 6 : 0))], r.lines[0] ?? r.label, text(11), { align: 'right', valign: 'middle' })
+    if (r.lines[1]) d.text([X(g.left - 8), Y(r.top + r.height / 2 + 7)], r.lines[1], text(9), { align: 'right', valign: 'middle', color: '#64748b' })
     if (r.kind === 'cylinder') {
       d.text([X(g.left - 2), Y(r.top)], '1', text(8), { align: 'right', valign: 'middle', color: '#64748b' })
       d.text([X(g.left - 2), Y(r.top + r.height)], '0', text(8), { align: 'right', valign: 'middle', color: '#64748b' })
