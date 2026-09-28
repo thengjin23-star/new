@@ -14,7 +14,9 @@ import {
   type CylinderState,
   type ParamValue,
 } from '../engine'
+import { bomTotal } from '../assembly/bom'
 import { buildCircuitBom } from '../store/circuitBom'
+import { formatMoney } from '../utils/money'
 import { checkCircuit, nodeTitle, type CheckLevel } from '../store/circuitChecks'
 import { exportCircuitBom, saveCircuit } from '../store/circuitFiles'
 import { useCircuitStore } from '../store/circuitStore'
@@ -286,7 +288,8 @@ function CircuitInfoPanel() {
   const openDialog = useCircuitUi((s) => s.openDialog)
   const { fitView } = useReactFlow()
   const checks = useMemo(() => checkCircuit(nodes, edges, products), [nodes, edges, products])
-  const bom = useMemo(() => buildCircuitBom(nodes), [nodes])
+  const bom = useMemo(() => buildCircuitBom(nodes, products), [nodes, products])
+  const total = bomTotal(bom)
 
   const focus = (ids: string[]) => {
     if (!ids.length) return
@@ -384,11 +387,17 @@ function CircuitInfoPanel() {
                     {r.tags.length > 0 && <span className="block text-[10px] text-slate-400">{r.tags.join(' ')}</span>}
                   </td>
                   <td className="py-1 text-right tabular-nums text-slate-700">×{r.quantity}</td>
+                  {total !== undefined && (
+                    <td className="py-1 pl-1 text-right tabular-nums text-slate-500">
+                      {r.price !== undefined ? formatMoney(r.price * r.quantity) : '—'}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+        {total !== undefined && <p className="mt-1 text-right text-xs font-semibold text-slate-700">合計 {formatMoney(total)}</p>}
       </section>
 
       <section className="space-y-2">

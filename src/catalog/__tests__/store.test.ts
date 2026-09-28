@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 import { formatSpec, parseSpec } from '../../threads'
-import { exportLibraryArchive, exportModuleArchive, importArchive } from '../archive'
+import { exportBackupArchive, exportLibraryArchive, exportModuleArchive, importArchive } from '../archive'
 import { CatalogStore } from '../db'
-import { guessModelCode, importCadFile } from '../importer'
+import { attachCadFile, createModelOnlyProduct, guessModelCode, importCadFile } from '../importer'
 import { installSamples } from '../samples'
 import { nodeParser, readSample, sampleManifest, uniqueDbName } from './nodeHelpers'
 
@@ -201,5 +201,83 @@ describe('資料庫升級', () => {
     await store.putCircuit({ id: 'c1', name: '迴路', createdAt: 1, updatedAt: 1, nodes: [], edges: [] })
     expect((await store.listCircuits()).map((c) => c.name)).toEqual(['迴路'])
     store.close()
+  })
+})
+
+describe('完整備份（.pbak）', () => {
+  it('產品、模組、迴路圖、搭配記錄、縮圖與設定全部還原；重複還原不會產生重複資料', async () => {
+    const a = await withSamples()
+    const valve = await byModel(a, 'DEMO-VALVE-52-01')
+    const fitting = await byModel(a, 'DEMO-FITTING-R18-D6')
+    await a.putModule({
+      id: 'm1',
+      name: '閥模組',
+      instances: [{ id: 'i1', productId: valve.id }],
+      mates: [],
+      placements: {},
+      createdAt: 1,
+      updatedAt: 5,
+    })
+    await a.putCircuit({
+      id: 'c1',
+      name: '迴路',
+      createdAt: 1,
+      updatedAt: 5,
+      nodes: [
+        {
+          id: 'n1',
+          type: 'pneumatic',
+          position: { x: 0, y: 0 },
+          data: { componentType: 'valve52Single', rotation: 0, product: { id: valve.id, modelCode: valve.modelCode, name: '' } },
+        },
+      ],
+      edges: [],
+    })
+    const statKey = `${valve.id}:${valve.ports[0].id}>${fitting.id}:${fitting.ports[0].id}`
+    await a.bumpStats([statKey, statKey])
+    await a.putThumb({ sha256: valve.source.sha256, png: new Uint8Array([137, 80, 78, 71]) })
+    await a.putSetting('app', { company: { name: '甲公司' } })
+
+    const backup = await exportBackupArchive(a)
+    const b = await open()
+    const report = await importArchive(b, backup)
+    expect(report).toMatchObject({ kind: 'backup', productsAdded: 12, modulesRestored: 1, circuitsRestored: 1 })
+    expect((await b.getModule('m1'))?.updatedAt).toBe(5)
+    expect((await b.getCircuit('c1'))?.nodes).toHaveLength(1)
+    expect((await b.listStats()).find((s) => s.key === statKey)?.count).toBe(2)
+    expect((await b.getThumb(valve.source.sha256))?.png).toEqual(new Uint8Array([137, 80, 78, 71]))
+    expect(await b.getSetting('app')).toEqual({ company: { name: '甲公司' } })
+
+    const again = await importArchive(b, backup)
+    expect(again).toMatchObject({ productsAdded: 0, modulesRestored: 0, circuitsRestored: 0 })
+    expect(await b.listModules()).toHaveLength(1)
+    expect((await b.listStats()).find((s) => s.key === statKey)?.count).toBe(2)
+  })
+})
+
+describe('只有型號的產品', () => {
+  it('建立後可以附加 3D 檔；檔案已屬於其他產品時拒絕', async () => {
+    const store = await open()
+    const p = await createModelOnlyProduct(store, { modelCode: 'VQ1101', category: 'valve', maker: 'SMC', price: 800 })
+    expect(p.source.bytes).toBe(0)
+    expect(await store.getProduct(p.id)).toMatchObject({ modelCode: 'VQ1101', maker: 'SMC', price: 800 })
+    const q = await createModelOnlyProduct(store, { modelCode: 'VQ1201', category: 'valve' })
+    expect(q.source.sha256).not.toBe(p.source.sha256)
+
+    const bytes = await readSample('DEMO-SILENCER-R18.step')
+    const attached = await attachCadFile(store, p, 'VQ1101.step', bytes, nodeParser)
+    expect(attached.source.bytes).toBe(bytes.length)
+    expect(await store.getMesh(attached.source.sha256)).toBeDefined()
+    expect((await store.getProductBySha(attached.source.sha256))?.id).toBe(p.id)
+    await expect(attachCadFile(store, q, 'x.step', bytes, nodeParser)).rejects.toThrow('已經是產品「VQ1101」')
+  })
+
+  it('只有型號的產品可以匯出、匯入（不需要 3D 資料）', async () => {
+    const a = await open()
+    await createModelOnlyProduct(a, { modelCode: 'NO-3D', category: 'fitting' })
+    const b = await open()
+    const report = await importArchive(b, await exportLibraryArchive(a))
+    expect(report.productsAdded).toBe(1)
+    expect((await b.listProducts())[0].modelCode).toBe('NO-3D')
   })
 })

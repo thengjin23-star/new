@@ -50,11 +50,14 @@ export function Dialog({
   onClose,
   children,
   footer,
+  wide,
 }: {
   title: string
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
+  /** 大型對話框（例如圖面預覽） */
+  wide?: boolean
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -66,7 +69,7 @@ export function Dialog({
       <div
         role="dialog"
         aria-label={title}
-        className="flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-lg bg-white shadow-xl"
+        className={`flex max-h-full w-full flex-col overflow-hidden rounded-lg bg-white shadow-xl ${wide ? 'h-full max-w-7xl' : 'max-w-lg'}`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -75,7 +78,7 @@ export function Dialog({
             ✕
           </button>
         </header>
-        <div className="overflow-y-auto px-4 py-3">{children}</div>
+        <div className={`overflow-y-auto px-4 py-3 ${wide ? 'min-h-0 flex-1' : ''}`}>{children}</div>
         {footer && <footer className="flex flex-wrap justify-end gap-2 border-t border-slate-200 px-4 py-3">{footer}</footer>}
       </div>
     </div>

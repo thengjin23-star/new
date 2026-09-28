@@ -1,3 +1,5 @@
+import { bomColumns, bomTotal } from '../assembly/bom'
+import type { Product } from '../catalog/types'
 import { registry } from '../engine'
 import { toCsv } from '../utils/csv'
 import type { CircuitInfo } from './circuitDoc'
@@ -12,13 +14,19 @@ export interface CircuitBomRow {
   typeLabel: string
   quantity: number
   tags: string[]
+  /** 產品庫中的廠牌與單價（有指定產品且產品庫有資料時） */
+  maker?: string
+  price?: number
 }
 
 /**
  * 迴路圖的材料表：指定了產品的元件依產品彙總，沒有指定的依元件類型彙總。
  * 氣源與排氣口不列入（不是要採購的零件）。
  */
-export function buildCircuitBom(nodes: readonly CircuitFlowNode[]): CircuitBomRow[] {
+export function buildCircuitBom(
+  nodes: readonly CircuitFlowNode[],
+  products: Readonly<Record<string, Pick<Product, 'maker' | 'price'>>> = {},
+): CircuitBomRow[] {
   const rows = new Map<string, CircuitBomRow>()
   for (const n of nodes) {
     if (!isPneumaticNode(n)) continue
@@ -29,6 +37,7 @@ export function buildCircuitBom(nodes: readonly CircuitFlowNode[]): CircuitBomRo
     const key = product ? `p:${product.id}` : `t:${type}`
     let row = rows.get(key)
     if (!row) {
+      const info = product && products[product.id]
       row = {
         index: 0,
         modelCode: product?.modelCode,
@@ -36,6 +45,8 @@ export function buildCircuitBom(nodes: readonly CircuitFlowNode[]): CircuitBomRo
         typeLabel,
         quantity: 0,
         tags: [],
+        ...(info?.maker && { maker: info.maker }),
+        ...(typeof info?.price === 'number' && { price: info.price }),
       }
       rows.set(key, row)
     }
@@ -55,11 +66,23 @@ export function buildCircuitBom(nodes: readonly CircuitFlowNode[]): CircuitBomRo
 }
 
 export function circuitBomToCsv(info: Pick<CircuitInfo, 'name' | 'customer'>, rows: readonly CircuitBomRow[]): string {
+  const cols = bomColumns(rows)
+  const total = bomTotal(rows)
   return toCsv([
     [`迴路：${info.name}`],
     ...(info.customer ? [[`客戶：${info.customer}`]] : []),
     [],
-    ['項次', '型號', '名稱', '元件類型', '數量', '標號'],
-    ...rows.map((r) => [r.index, r.modelCode ?? '', r.name, r.typeLabel, r.quantity, r.tags.join(' ')]),
+    ['項次', '型號', '名稱', '元件類型', ...(cols.maker ? ['廠牌'] : []), '數量', '標號', ...(cols.price ? ['單價', '小計'] : [])],
+    ...rows.map((r) => [
+      r.index,
+      r.modelCode ?? '',
+      r.name,
+      r.typeLabel,
+      ...(cols.maker ? [r.maker ?? ''] : []),
+      r.quantity,
+      r.tags.join(' '),
+      ...(cols.price ? [r.price ?? '', r.price !== undefined ? r.price * r.quantity : ''] : []),
+    ]),
+    ...(total !== undefined ? [[], ['', '', '', '', ...(cols.maker ? [''] : []), '', '', '合計', total]] : []),
   ])
 }

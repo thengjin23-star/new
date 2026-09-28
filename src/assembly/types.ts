@@ -24,11 +24,30 @@ export interface Mate {
 /** 4×4 矩陣，行優先（column-major，與 three.js Matrix4.elements 相同） */
 export type Mat4 = number[]
 
+/** 圖面的正面：觀察者位在模組的哪一側（以模組的座標軸表示） */
+export type FrontSide = '-y' | '+y' | '+x' | '-x' | '+z' | '-z'
+
+/** 圖面設定：記在模組裡，下次產生圖面時沿用 */
+export interface DrawingInfo {
+  number?: string
+  revision?: string
+  notes?: string
+  front?: FrontSide
+  paper?: 'A3' | 'A4'
+  projection?: 'third' | 'first'
+  hidden?: boolean
+  dimensions?: boolean
+  balloons?: boolean
+  portTags?: boolean
+  iso?: boolean
+}
+
 export interface ModuleDoc {
   id: string
   name: string
   customer?: string
   notes?: string
+  drawing?: DrawingInfo
   instances: ModuleInstance[]
   mates: Mate[]
   /** 根零件（沒有父零件）的位置；鎖合的零件由 mates 推導，不存在這裡 */

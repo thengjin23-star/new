@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react'
-import { buildBom } from '../assembly/bom'
-import { getPort, mateChecks, mateRotation } from '../assembly/moduleOps'
+import { bomColumns, bomTotal, buildBom } from '../assembly/bom'
+import { formatMoney } from '../utils/money'
+import { suggestPartners } from '../assembly/memory'
+import { getPort, mateChecks, mateRotation, usedPorts } from '../assembly/moduleOps'
+import { useLibraryStore } from '../catalog/library'
 import { effectivePneumatic, isCircuitType, pneumaticTypeLabel } from '../catalog/pneumatic'
-import { CATEGORY_LABEL, type Product, type ProductCategory } from '../catalog/types'
+import { CATEGORY_LABEL, hasModel, type Product, type ProductCategory } from '../catalog/types'
 import { PneumaticFunctionDialog } from '../components/PneumaticFunctionEditor'
 import { SymbolPreview } from '../components/SymbolPreview'
 import { formatSpec, type MateLevel } from '../threads'
 import { portLabel } from './labels'
 import { useModuleStore } from './moduleStore'
 import { LEVEL_COLOR } from '../components/levels'
-import { Button, Empty, LevelBadge } from '../components/ui'
+import { Button, Dialog, Empty, LevelBadge } from '../components/ui'
 
 type Tab = 'part' | 'check' | 'bom'
 
@@ -102,6 +105,7 @@ function PartTab() {
           ))}
         </ul>
       </section>
+      <PartActions instanceId={inst.id} product={product} />
       <Button variant="danger" size="sm" onClick={removeSelected}>
         從模組移除這個零件
       </Button>
@@ -109,48 +113,184 @@ function PartTab() {
   )
 }
 
+/** 零件的快速操作：自動配上常用零件、更換零件、複製 */
+function PartActions({ instanceId, product }: { instanceId: string; product: Product }) {
+  const doc = useModuleStore((s) => s.doc)
+  const products = useModuleStore((s) => s.products)
+  const stats = useModuleStore((s) => s.stats)
+  const autoFill = useModuleStore((s) => s.autoFill)
+  const duplicateSelected = useModuleStore((s) => s.duplicateSelected)
+  const [replacing, setReplacing] = useState(false)
+  // 有幾個空著的埠有搭配記錄
+  const fillable = useMemo(() => {
+    const used = usedPorts(doc)
+    return product.ports.filter(
+      (port) =>
+        !used.has(`${instanceId}:${port.id}`) &&
+        suggestPartners({ product, port }, Object.values(products), stats).some((sug) => sug.score > 0),
+    ).length
+  }, [doc, products, stats, product, instanceId])
+  return (
+    <section className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant={fillable ? 'primary' : 'default'}
+          disabled={!fillable}
+          onClick={() => void autoFill(instanceId)}
+          title={fillable ? '依以前的搭配記錄，把空著的埠一次接上常用的接頭、消音器等' : '空著的埠還沒有搭配記錄'}
+        >
+          自動配上常用零件{fillable ? `（${fillable}）` : ''}
+        </Button>
+        <Button size="sm" onClick={() => setReplacing(true)}>
+          更換零件…
+        </Button>
+        <Button size="sm" onClick={() => void duplicateSelected()}>
+          複製
+        </Button>
+      </div>
+      {replacing && <ReplaceDialog instanceId={instanceId} current={product} onClose={() => setReplacing(false)} />}
+    </section>
+  )
+}
+
+/** 更換零件：同類別的產品排在前面 */
+function ReplaceDialog({ instanceId, current, onClose }: { instanceId: string; current: Product; onClose: () => void }) {
+  const products = useModuleStore((s) => s.products)
+  const thumbs = useLibraryStore((s) => s.thumbs)
+  const replace = useModuleStore((s) => s.replaceInstanceProduct)
+  const [query, setQuery] = useState('')
+  const q = query.trim().toLowerCase()
+  const list = Object.values(products)
+    .filter((p) => p.id !== current.id && hasModel(p))
+    .filter((p) => !q || `${p.modelCode} ${p.name} ${p.maker ?? ''}`.toLowerCase().includes(q))
+    .sort((a, b) => Number(b.category === current.category) - Number(a.category === current.category) || a.modelCode.localeCompare(b.modelCode))
+  return (
+    <Dialog title={`更換「${current.modelCode}」`} onClose={onClose} footer={<Button onClick={onClose}>取消</Button>}>
+      <p className="mb-2 text-xs leading-5 text-slate-500">原本的鎖合會對應到新產品同名或規格相容的埠；對應不到的會拆開。</p>
+      <input
+        autoFocus
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="搜尋型號或名稱"
+        className="mb-2 h-8 w-full rounded-md border border-slate-300 px-2 text-sm"
+      />
+      <ul className="max-h-80 space-y-1 overflow-y-auto">
+        {list.map((p) => (
+          <li key={p.id}>
+            <button
+              type="button"
+              data-replace={p.modelCode}
+              onClick={() => {
+                void replace(instanceId, p.id)
+                onClose()
+              }}
+              className="flex w-full items-center gap-2 rounded-md border border-slate-200 px-2 py-1 text-left hover:border-blue-400 hover:bg-blue-50"
+            >
+              <span className="flex h-8 w-10 shrink-0 items-center justify-center overflow-hidden rounded bg-slate-50">
+                {thumbs[p.source.sha256] && <img src={thumbs[p.source.sha256]} alt="" className="h-full w-full object-contain" />}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-slate-800">{p.modelCode}</span>
+                <span className="block truncate text-xs text-slate-500">
+                  {[p.name, CATEGORY_LABEL[p.category]].filter(Boolean).join('．')}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Dialog>
+  )
+}
+
 function ProductForm({ product }: { product: Product }) {
   const updateProduct = useModuleStore((s) => s.updateProduct)
-  const [modelCode, setModelCode] = useState(product.modelCode)
-  const [name, setName] = useState(product.name)
+  const [draft, setDraft] = useState({
+    modelCode: product.modelCode,
+    name: product.name,
+    maker: product.maker ?? '',
+    series: product.series ?? '',
+    price: product.price === undefined ? '' : String(product.price),
+    notes: product.notes ?? '',
+  })
   const save = (patch: Partial<Product>) => void updateProduct({ ...product, ...patch })
+  const field = (key: keyof typeof draft) => ({
+    value: draft[key],
+    onChange: (e: { target: { value: string } }) => setDraft((d) => ({ ...d, [key]: e.target.value })),
+  })
+  const commitText = (key: 'name' | 'maker' | 'series' | 'notes') => {
+    const value = draft[key].trim()
+    if (value === (product[key] ?? '')) return
+    save({ [key]: key === 'name' ? value : value || undefined })
+  }
+  const inputClass = 'mt-0.5 h-8 w-full rounded-md border border-slate-300 px-2 text-sm text-slate-800'
   return (
     <section className="space-y-2">
       <label className="block text-xs text-slate-500">
         型號
         <input
-          value={modelCode}
-          onChange={(e) => setModelCode(e.target.value)}
-          onBlur={() => modelCode.trim() && modelCode !== product.modelCode && save({ modelCode: modelCode.trim() })}
-          className="mt-0.5 h-8 w-full rounded-md border border-slate-300 px-2 text-sm text-slate-800"
+          {...field('modelCode')}
+          onBlur={() => draft.modelCode.trim() && draft.modelCode !== product.modelCode && save({ modelCode: draft.modelCode.trim() })}
+          className={inputClass}
         />
       </label>
       <label className="block text-xs text-slate-500">
         名稱
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={() => name !== product.name && save({ name: name.trim() })}
-          placeholder="例如：直通快插接頭"
-          className="mt-0.5 h-8 w-full rounded-md border border-slate-300 px-2 text-sm text-slate-800"
+        <input {...field('name')} onBlur={() => commitText('name')} placeholder="例如：直通快插接頭" className={inputClass} />
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block text-xs text-slate-500">
+          類別
+          <select
+            value={product.category}
+            onChange={(e) => save({ category: e.target.value as ProductCategory })}
+            className={inputClass}
+          >
+            {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-xs text-slate-500">
+          廠牌
+          <input {...field('maker')} onBlur={() => commitText('maker')} placeholder="SMC、AirTAC…" className={inputClass} />
+        </label>
+        <label className="block text-xs text-slate-500">
+          系列
+          <input {...field('series')} onBlur={() => commitText('series')} className={inputClass} />
+        </label>
+        <label className="block text-xs text-slate-500">
+          單價（選填）
+          <input
+            {...field('price')}
+            inputMode="decimal"
+            onBlur={() => {
+              const text = draft.price.trim()
+              const price = text === '' ? undefined : Number(text)
+              if (price !== undefined && !Number.isFinite(price)) return
+              if (price !== product.price) save({ price })
+            }}
+            className={inputClass}
+          />
+        </label>
+      </div>
+      <label className="block text-xs text-slate-500">
+        備註
+        <textarea
+          {...field('notes')}
+          onBlur={() => commitText('notes')}
+          rows={2}
+          className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-800"
         />
       </label>
-      <label className="block text-xs text-slate-500">
-        類別
-        <select
-          value={product.category}
-          onChange={(e) => save({ category: e.target.value as ProductCategory })}
-          className="mt-0.5 h-8 w-full rounded-md border border-slate-300 px-2 text-sm text-slate-800"
-        >
-          {Object.entries(CATEGORY_LABEL).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </select>
-      </label>
       <p className="text-[11px] text-slate-400">
-        來源檔案：{product.source.fileName}（{(product.source.bytes / 1024).toFixed(0)} KB）
+        {product.source.bytes > 0
+          ? `來源檔案：${product.source.fileName}（${(product.source.bytes / 1024).toFixed(0)} KB）`
+          : '這個產品還沒有 3D 檔'}
       </p>
     </section>
   )
@@ -304,6 +444,8 @@ function BomTab() {
   const downloadBomCsv = useModuleStore((s) => s.downloadBomCsv)
   const rows = useMemo(() => buildBom(doc, products), [doc, products])
   if (rows.length === 0) return <Empty>模組中還沒有零件。</Empty>
+  const cols = bomColumns(rows.map((r) => r.product))
+  const total = bomTotal(rows.map((r) => ({ price: r.product.price, quantity: r.quantity })))
   return (
     <div className="space-y-3 p-3">
       <table className="w-full text-xs" aria-label="BOM">
@@ -312,6 +454,7 @@ function BomTab() {
             <th className="py-1 pr-1">項次</th>
             <th className="py-1 pr-1">型號／名稱</th>
             <th className="py-1 text-right">數量</th>
+            {cols.price && <th className="py-1 pl-1 text-right">小計</th>}
           </tr>
         </thead>
         <tbody>
@@ -321,15 +464,23 @@ function BomTab() {
               <td className="py-1 pr-1">
                 <div className="font-medium text-slate-800">{r.product.modelCode}</div>
                 <div className="text-slate-500">
-                  {r.product.name || '—'}．{CATEGORY_LABEL[r.product.category]}
+                  {[r.product.name || '—', CATEGORY_LABEL[r.product.category], r.product.maker].filter(Boolean).join('．')}
                 </div>
               </td>
               <td className="py-1 text-right font-semibold">{r.quantity}</td>
+              {cols.price && (
+                <td className="py-1 pl-1 text-right tabular-nums text-slate-700">
+                  {r.product.price !== undefined ? formatMoney(r.product.price * r.quantity) : '—'}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="text-[11px] text-slate-500">共 {doc.instances.length} 個零件、{rows.length} 種型號。</p>
+      <p className="text-[11px] text-slate-500">
+        共 {doc.instances.length} 個零件、{rows.length} 種型號。
+        {total !== undefined && <span className="ml-1 font-semibold text-slate-700">合計 {formatMoney(total)}</span>}
+      </p>
       <Button size="sm" onClick={downloadBomCsv}>
         下載 CSV（可用 Excel 開啟）
       </Button>

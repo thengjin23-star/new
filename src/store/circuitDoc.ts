@@ -11,6 +11,10 @@ export interface CircuitInfo {
   name: string
   customer?: string
   notes?: string
+  /** 出圖用：圖號、版次、圖紙大小 */
+  drawingNo?: string
+  revision?: string
+  paper?: 'A3' | 'A4'
   createdAt: number
   updatedAt: number
 }
@@ -105,6 +109,9 @@ export function parsePcir(text: string): CircuitDoc {
     ...info,
     customer: typeof c.customer === 'string' ? c.customer : undefined,
     notes: typeof c.notes === 'string' ? c.notes : undefined,
+    drawingNo: typeof c.drawingNo === 'string' ? c.drawingNo : undefined,
+    revision: typeof c.revision === 'string' ? c.revision : undefined,
+    paper: c.paper === 'A3' || c.paper === 'A4' ? c.paper : undefined,
     nodes: nodes.map(stripNode),
     edges: edges.map(stripEdge),
   }

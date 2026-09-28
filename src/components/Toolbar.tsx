@@ -7,10 +7,12 @@ import { exportCircuitBom, exportCircuitFile, importCircuitFile, saveCircuit } f
 import { useCircuitStore, type SimStatus } from '../store/circuitStore'
 import { useCircuitUi } from '../store/circuitUi'
 import { FIT_VIEW_OPTIONS } from './canvasConfig'
+import { useSettingsStore } from '../settings/settings'
 import {
   DemoIcon,
   FileIcon,
   FlipIcon,
+  GearIcon,
   PauseIcon,
   PlayIcon,
   RedoIcon,
@@ -155,6 +157,8 @@ export function Toolbar() {
           { label: `匯入迴路圖（${PCIR_EXT}）…`, disabled: !editing, onSelect: () => fileInput.current?.click() },
           { label: `匯出迴路圖（${PCIR_EXT}）`, disabled: !s.hasNodes, hint: '可寄給同事或在其他裝置開啟', onSelect: exportCircuitFile },
           { label: '匯出 BOM（CSV）', disabled: !s.hasNodes, onSelect: exportCircuitBom },
+          { divider: true },
+          { label: '出圖（PDF／DXF／SVG）…', disabled: !s.hasNodes, hint: '含標題欄與零件表，可列印或給客戶', onSelect: () => openDialog('drawing') },
         ]}
       />
       <Menu
@@ -202,6 +206,7 @@ export function Toolbar() {
           {(s.dirty || !s.stored) && s.hasNodes && <span className="ml-1 text-amber-300" title="有未儲存的變更">●</span>}
         </span>
         <StatusPill />
+        <ToolButton onClick={() => useSettingsStore.getState().openDialog(true)} icon={<GearIcon />} label="設定" compact />
       </div>
 
       <input

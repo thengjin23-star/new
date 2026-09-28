@@ -9,6 +9,7 @@ import type { Product } from '../catalog/types'
 import type { Vec3 } from '../geometry/vec3'
 import { faceGeometry, geometriesFor } from './geometryCache'
 import { useModuleStore, useTransforms } from './moduleStore'
+import { DimensionLines, MeasureOverlay } from './Measure'
 import { PortMarker } from './PortMarker'
 
 const DEFAULT_COLOR = new Color('#b9c1c9')
@@ -33,6 +34,10 @@ function InstanceView({ instance, product, mesh, matrix }: { instance: ModuleIns
     if (e.delta > 4) return // 拖曳旋轉視角，不是點選
     e.stopPropagation()
     const s = useModuleStore.getState()
+    if (s.mode === 'measure') {
+      s.addMeasurePoint(e.point.toArray() as Vec3)
+      return
+    }
     if (s.mode === 'define-port' && e.faceIndex != null) {
       const local = e.object.worldToLocal(e.point.clone())
       s.pickFace(instance.id, partIndex, e.faceIndex, local.toArray() as Vec3)
@@ -148,6 +153,7 @@ export function Viewport() {
         const s = useModuleStore.getState()
         if (s.connectFrom) s.cancelConnect()
         else if (s.mode === 'select') s.select(undefined)
+        else if (s.mode === 'measure') s.clearMeasure()
       }}
     >
       <color attach="background" args={['#eef2f6']} />
@@ -167,6 +173,8 @@ export function Viewport() {
       <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
         <GizmoViewport axisColors={['#dc2626', '#16a34a', '#2563eb']} labelColor="white" />
       </GizmoHelper>
+      <MeasureOverlay />
+      <DimensionLines />
       <FitController root={root} />
       <TestHook />
     </Canvas>

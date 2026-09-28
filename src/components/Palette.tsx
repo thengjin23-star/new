@@ -7,6 +7,7 @@ import { registry, type ComponentCategory, type Params } from '../engine'
 import { useCircuitStore, type AddOptions } from '../store/circuitStore'
 import { COMPONENT_DRAG_MIME, type ComponentDragPayload } from './canvasConfig'
 import { NoteIcon } from './icons'
+import { NewProductDialog } from './NewProductDialog'
 import { findFreeSpot } from './placement'
 import { PneumaticFunctionDialog } from './PneumaticFunctionEditor'
 import { SymbolPreview } from './SymbolPreview'
@@ -134,10 +135,12 @@ interface ProductEntry {
 
 function ProductList({ query, editing }: { query: string; editing: boolean }) {
   const products = useLibraryStore((s) => s.products)
+  const thumbs = useLibraryStore((s) => s.thumbs)
   const status = useLibraryStore((s) => s.status)
   const error = useLibraryStore((s) => s.error)
   const addAtCenter = useAddAtCenter()
   const [setup, setSetup] = useState<Product | undefined>()
+  const [creating, setCreating] = useState(false)
 
   const { usable, unset, passive } = useMemo(() => {
     const usable: ProductEntry[] = []
@@ -166,17 +169,45 @@ function ProductList({ query, editing }: { query: string; editing: boolean }) {
   if (status !== 'ready' && total === 0) {
     return <p className="p-2 text-xs text-slate-500">讀取產品庫…</p>
   }
+  const newProduct = (
+    <>
+      <button
+        type="button"
+        disabled={!editing}
+        onClick={() => setCreating(true)}
+        className="w-28 shrink-0 rounded-md border border-dashed border-slate-300 px-2 py-1.5 text-xs text-slate-600 hover:border-blue-400 hover:bg-blue-50 disabled:opacity-40 md:w-full"
+      >
+        ＋ 新增產品（無 3D 檔）
+      </button>
+      {creating && (
+        <NewProductDialog
+          onClose={() => setCreating(false)}
+          onCreated={(product) => {
+            const pn = effectivePneumatic(product)
+            if (pn && isCircuitType(pn.type)) {
+              addAtCenter(pn.type, { product: { id: product.id, modelCode: product.modelCode, name: product.name }, params: pn.params })
+            }
+          }}
+        />
+      )}
+    </>
+  )
+
   if (total === 0) {
     return (
-      <div className="w-64 shrink-0 space-y-2 p-1 text-xs leading-5 text-slate-500 md:w-auto">
-        <p>產品庫是空的。</p>
-        <p>
-          到「模組組立」匯入公司產品的 3D 檔（STEP／IGES）或安裝範例產品，這裡就會出現可以放進迴路圖的產品。
-        </p>
-        <a href="#/module" className="inline-block rounded-md bg-blue-600 px-2.5 py-1 font-medium text-white hover:bg-blue-500">
-          前往模組組立
-        </a>
-      </div>
+      <>
+        <div className="w-64 shrink-0 space-y-2 p-1 text-xs leading-5 text-slate-500 md:w-auto">
+          <p>產品庫是空的。</p>
+          <p>
+            到「模組組立」匯入公司產品的 3D 檔（STEP／IGES）或安裝範例產品，這裡就會出現可以放進迴路圖的產品；
+            也可以先只建型號。
+          </p>
+          <a href="#/module" className="inline-block rounded-md bg-blue-600 px-2.5 py-1 font-medium text-white hover:bg-blue-500">
+            前往模組組立
+          </a>
+        </div>
+        {newProduct}
+      </>
     )
   }
 
@@ -195,10 +226,17 @@ function ProductList({ query, editing }: { query: string; editing: boolean }) {
             startDrag(e, { type: entry.type!, productId: entry.product.id })
           }
           onClick={() => addAtCenter(entry.type!, options(entry))}
-          className={itemClass}
+          className={`${itemClass} relative`}
           title={`${productLabel(entry.product)}（${registry.get(entry.type!).label}）：拖拉到畫布，或點一下加入`}
           data-product={entry.product.modelCode}
         >
+          {thumbs[entry.product.source.sha256] && (
+            <img
+              src={thumbs[entry.product.source.sha256]}
+              alt=""
+              className="absolute top-1 right-1 h-6 w-8 rounded border border-slate-200 bg-white object-contain"
+            />
+          )}
           <SymbolPreview type={entry.type!} params={entry.params} />
           <span className="w-full truncate text-center font-mono text-[11px] font-semibold text-slate-800">
             {entry.product.modelCode}
@@ -231,6 +269,7 @@ function ProductList({ query, editing }: { query: string; editing: boolean }) {
           另有 {passive.length} 個接頭／集裝座：迴路圖以管線表示，不需要放置。
         </p>
       )}
+      {newProduct}
       {setup && (
         <PneumaticFunctionDialog
           product={setup}

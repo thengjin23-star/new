@@ -15,6 +15,29 @@ export interface StoredMesh {
   tessellation: Tessellation
 }
 
+/** 產品縮圖（PNG），以原始檔 sha256 為 key */
+export interface StoredThumb {
+  sha256: string
+  png: Uint8Array
+}
+
+/** 設定（key-value） */
+export interface StoredSetting {
+  key: string
+  value: unknown
+}
+
+/**
+ * 搭配記錄：「A 產品的某個埠」接過「B 產品的某個埠」幾次。
+ * key 為 `${productA}:${portA}>${productB}:${portB}`（兩個方向各存一筆）；
+ * 另以 `spec:${規格}>${productB}:${portB}` 記錄「這種規格的埠常接哪個產品」，換產品時也能參考。
+ */
+export interface StoredStat {
+  key: string
+  count: number
+  lastUsed: number
+}
+
 interface CatalogSchema extends DBSchema {
   products: { key: string; value: Product; indexes: { 'by-sha': string } }
   /** 原始 STEP／IGES 檔（M2 產生圖面與 STEP 組立檔時需要） */
@@ -24,10 +47,16 @@ interface CatalogSchema extends DBSchema {
   modules: { key: string; value: ModuleDoc }
   /** 迴路圖（v2） */
   circuits: { key: string; value: CircuitDoc }
+  /** 產品縮圖（v3） */
+  thumbs: { key: string; value: StoredThumb }
+  /** 設定（v3） */
+  settings: { key: string; value: StoredSetting }
+  /** 搭配記錄（v3） */
+  stats: { key: string; value: StoredStat }
 }
 
 export const CATALOG_DB = 'pneumatic-catalog'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 /** 產品庫與模組的本機儲存（IndexedDB） */
 export class CatalogStore {
@@ -53,6 +82,11 @@ export class CatalogStore {
           db.createObjectStore('modules', { keyPath: 'id' })
         }
         if (oldVersion < 2) db.createObjectStore('circuits', { keyPath: 'id' })
+        if (oldVersion < 3) {
+          db.createObjectStore('thumbs', { keyPath: 'sha256' })
+          db.createObjectStore('settings', { keyPath: 'key' })
+          db.createObjectStore('stats', { keyPath: 'key' })
+        }
       },
       // 另一個分頁要升級資料庫時，先關閉這裡的連線，避免對方卡住
       blocking() {
@@ -99,11 +133,12 @@ export class CatalogStore {
   async deleteProduct(id: string): Promise<void> {
     const product = await this.getProduct(id)
     if (!product) return
-    const tx = this.db.transaction(['products', 'files', 'meshes'], 'readwrite')
+    const tx = this.db.transaction(['products', 'files', 'meshes', 'thumbs'], 'readwrite')
     await Promise.all([
       tx.objectStore('products').delete(id),
       tx.objectStore('files').delete(product.source.sha256),
       tx.objectStore('meshes').delete(product.source.sha256),
+      tx.objectStore('thumbs').delete(product.source.sha256),
       tx.done,
     ])
   }
@@ -148,6 +183,47 @@ export class CatalogStore {
   }
   async deleteCircuit(id: string): Promise<void> {
     await this.db.delete('circuits', id)
+  }
+
+  // ---- 縮圖 ----
+  getThumb(sha256: string): Promise<StoredThumb | undefined> {
+    return this.db.get('thumbs', sha256)
+  }
+  listThumbs(): Promise<StoredThumb[]> {
+    return this.db.getAll('thumbs')
+  }
+  async putThumb(thumb: StoredThumb): Promise<void> {
+    await this.db.put('thumbs', thumb)
+  }
+
+  // ---- 設定 ----
+  async getSetting<T>(key: string): Promise<T | undefined> {
+    return (await this.db.get('settings', key))?.value as T | undefined
+  }
+  async putSetting(key: string, value: unknown): Promise<void> {
+    await this.db.put('settings', { key, value })
+  }
+
+  // ---- 搭配記錄 ----
+  listStats(): Promise<StoredStat[]> {
+    return this.db.getAll('stats')
+  }
+  /** 把多筆記錄的次數各加一（同一個交易） */
+  async bumpStats(keys: readonly string[], at = Date.now()): Promise<StoredStat[]> {
+    const tx = this.db.transaction('stats', 'readwrite')
+    const result: StoredStat[] = []
+    for (const key of keys) {
+      const prev = await tx.store.get(key)
+      const next = { key, count: (prev?.count ?? 0) + 1, lastUsed: at }
+      await tx.store.put(next)
+      result.push(next)
+    }
+    await tx.done
+    return result
+  }
+  async putStats(stats: readonly StoredStat[]): Promise<void> {
+    const tx = this.db.transaction('stats', 'readwrite')
+    await Promise.all([...stats.map((s) => tx.store.put(s)), tx.done])
   }
 
   /** 使用到某個產品的模組（刪除產品前提醒用） */

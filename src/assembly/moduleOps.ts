@@ -1,6 +1,6 @@
 import { Matrix4 } from 'three'
 import type { Product, ProductPort } from '../catalog/types'
-import { checkMate, type MateResult } from '../threads'
+import { checkMate, specKey, type MateResult } from '../threads'
 import { newId } from '../utils/id'
 import { fromMatrix, mateTransform, toMatrix } from './frames'
 import type { Mat4, Mate, ModuleDoc, PortRef } from './types'
@@ -204,4 +204,68 @@ export function mateChecks(doc: ModuleDoc, products: ProductMap): MateCheck[] {
     mate,
     result: checkMate(getPort(doc, products, mate.parent)?.spec, getPort(doc, products, mate.child)?.spec),
   }))
+}
+
+export interface ReplaceResult {
+  doc: ModuleDoc
+  /** 保留下來的鎖合數 */
+  kept: number
+  /** 新產品上找不到對應埠而拆開的鎖合（原本的埠名稱） */
+  dropped: string[]
+}
+
+/**
+ * 更換零件的產品（例如 Ø6 接頭換成 Ø8）：原本的鎖合依序以
+ * 「同名的埠」→「規格相同的埠」→「與對方規格相容的埠」對應到新產品；都找不到就拆開。
+ */
+export function replaceProduct(doc: ModuleDoc, products: ProductMap, instanceId: string, newProductId: string): ReplaceResult {
+  const inst = doc.instances.find((i) => i.id === instanceId)
+  const oldProduct = inst && products[inst.productId]
+  const newProduct = products[newProductId]
+  if (!inst || !oldProduct || !newProduct) return { doc, kept: 0, dropped: [] }
+
+  const taken = new Set<string>()
+  const mapPort = (oldPortId: string, partner: PortRef): string | undefined => {
+    const old = oldProduct.ports.find((p) => p.id === oldPortId)
+    if (!old) return undefined
+    const free = newProduct.ports.filter((p) => !taken.has(p.id))
+    const partnerSpec = getPort(doc, products, partner)?.spec
+    const hit =
+      free.find((p) => p.name === old.name) ??
+      (old.spec ? free.find((p) => p.spec && specKey(p.spec) === specKey(old.spec!)) : undefined) ??
+      free.find((p) => ['ok', 'warn'].includes(checkMate(partnerSpec, p.spec).level))
+    if (hit) taken.add(hit.id)
+    return hit?.id
+  }
+
+  // 先把鎖合都放到新產品上；對應不到的拆開（子零件群組保持目前位置）
+  const { transforms } = computeTransforms(doc, products)
+  const placements = { ...doc.placements }
+  const mates: Mate[] = []
+  const dropped: string[] = []
+  for (const m of doc.mates) {
+    const side = m.parent.instance === instanceId ? 'parent' : m.child.instance === instanceId ? 'child' : undefined
+    if (!side) {
+      mates.push(m)
+      continue
+    }
+    const self = m[side]
+    const partner = side === 'parent' ? m.child : m.parent
+    const port = mapPort(self.port, partner)
+    if (port) {
+      mates.push({ ...m, [side]: { instance: instanceId, port } })
+      continue
+    }
+    dropped.push(oldProduct.ports.find((p) => p.id === self.port)?.name ?? self.port)
+    placements[m.child.instance] = transforms[m.child.instance]
+  }
+  return {
+    doc: touch(doc, {
+      instances: doc.instances.map((i) => (i.id === instanceId ? { ...i, productId: newProductId } : i)),
+      mates,
+      placements,
+    }),
+    kept: mates.length - doc.mates.filter((m) => m.parent.instance !== instanceId && m.child.instance !== instanceId).length,
+    dropped,
+  }
 }
