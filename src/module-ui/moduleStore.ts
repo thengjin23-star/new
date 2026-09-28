@@ -6,9 +6,28 @@ import { mateStatKeys, suggestPartners, type Suggestion } from '../assembly/memo
 import { bomToCsv, buildBom } from '../assembly/bom'
 import * as ops from '../assembly/moduleOps'
 import { bezierLength, estimateTubeLength, isTubeSocket, tubeControlPoints } from '../assembly/tubes'
-import type { DrawingInfo, ModuleDoc, ModuleTube, PortRef } from '../assembly/types'
+import type { DrawingInfo, ModuleDoc, ModuleInstance, ModuleTube, PortRef } from '../assembly/types'
 import { deriveModuleCircuit, type ModuleCircuit } from '../assembly/moduleCircuit'
-import { createInitialState, interact, step, type InteractAction, type SimState } from '../engine'
+import { ensureModuleSignals } from '../assembly/moduleSignals'
+import {
+  createInitialState,
+  interact,
+  runSequence,
+  SEQUENCER_IDLE,
+  SIGNAL_PARAM_NAMESPACE,
+  step,
+  stepSequence,
+  stopSequence,
+  type InteractAction,
+  type ParamValue,
+  type Sequence,
+  type SequencerState,
+  type SequencerTick,
+  type SimState,
+} from '../engine'
+import { EMPTY_SEQUENCE, sanitizeSequence } from '../store/circuitDoc'
+import { advanceRun, applySequencerTick } from '../store/sequenceRun'
+import { traceFromCircuit, type Trace } from '../store/trace'
 import { exportLibraryArchive, exportModuleArchive, importArchive, LIBRARY_EXT, MODULE_EXT } from '../catalog/archive'
 import { detectCadFormat } from '../catalog/cad'
 import { parseCadInWorker } from '../catalog/cadClient'
@@ -96,6 +115,12 @@ interface State {
   selectedTube?: string
   /** 3D 模擬（mode = 'simulate' 時） */
   sim?: ModuleSim
+  /** 程序控制的執行狀態（3D 模擬中） */
+  seq: SequencerState
+  /** 位移－步驟圖的記錄（3D 模擬中） */
+  trace?: Trace
+  /** 程序控制面板 */
+  sequenceOpen: boolean
 
   init(): Promise<void>
   importFiles(files: readonly File[]): Promise<void>
@@ -166,6 +191,21 @@ interface State {
   simulationInteract(nodeId: string, action?: InteractAction): void
   /** 圖面設定（圖號、版次、選項）：記在模組裡，不列入復原歷史 */
   setDrawingInfo(patch: Partial<DrawingInfo>): void
+  /** 修改零件在模組中的參數（訊號名稱、負載…）；值為 undefined 時移除該參數 */
+  setInstanceParams(instanceId: string, patch: Readonly<Record<string, ParamValue | undefined>>): void
+  /** 補上缺少的訊號名稱（氣缸代號、線圈輸出），不列入復原歷史 */
+  ensureSignals(): void
+  /** 程序控制：步驟（執行中不能修改；不列入復原歷史） */
+  setSequence(sequence: Sequence): void
+  /** 自動執行（還沒開始模擬時先開始） */
+  seqAuto(): void
+  /** 單步 */
+  seqStep(): void
+  seqStop(): void
+  /** 復歸：停止程序、輸出全部 OFF、氣缸回到初始位置 */
+  seqHome(): void
+  setContinuous(on: boolean): void
+  toggleSequencePanel(open?: boolean): void
   /** 確保目前模組所有零件的網格都已載入 */
   loadDocMeshes(): Promise<void>
 }
@@ -207,7 +247,12 @@ export const useModuleStore = create<State>()((set, get) => {
     const { doc: prev, past } = get()
     set({ doc, past: [...past, prev].slice(-HISTORY_LIMIT), future: [], saved: false })
     scheduleSave()
-    if (get().mode === 'simulate') set({ sim: updatedSimulation(doc) })
+    if (get().mode === 'simulate') {
+      // 模擬中加入的零件也要有訊號名稱
+      const named = ensureModuleSignals(doc, get().products)
+      if (named !== doc) set({ doc: named })
+      updateSimulation(named)
+    }
   }
 
   const freshSimulation = (doc: ModuleDoc): ModuleSim => {
@@ -215,13 +260,53 @@ export const useModuleStore = create<State>()((set, get) => {
     return { mc, state: step(mc.circuit, createInitialState(mc.circuit), 0), paused: false }
   }
 
-  /** 元件沒有增減（例如只改了供氣壓力）時保留閥位與活塞位置，否則重新開始 */
-  const updatedSimulation = (doc: ModuleDoc): ModuleSim => {
+  /** 位移－步驟圖的記錄：氣缸以型號說明 */
+  const traceOf = (sim: ModuleSim): Trace => {
+    const { doc, products } = get()
+    return traceFromCircuit(sim.mc.circuit, sim.state, (id) => {
+      const inst = doc.instances.find((i) => i.id === sim.mc.nodeInstance[id])
+      const product = inst && products[inst.productId]
+      return product ? product.modelCode || productLabel(product) : undefined
+    })
+  }
+
+  /** 重新開始模擬（程序停在尚未開始、重新記錄） */
+  const restartSimulation = (sim: ModuleSim) => {
+    set({ sim, seq: { ...SEQUENCER_IDLE, continuous: get().seq.continuous }, trace: traceOf(sim) })
+  }
+
+  /** 元件沒有增減（例如只改了供氣壓力）時保留閥位、活塞位置與程序，否則重新開始 */
+  const updateSimulation = (doc: ModuleDoc) => {
     const sim = get().sim
     const mc = deriveModuleCircuit(doc, get().products)
     const before = sim?.mc.circuit.nodes
     const same = !!before && before.length === mc.circuit.nodes.length && mc.circuit.nodes.every((n, i) => before[i].id === n.id && before[i].type === n.type)
-    return same ? { ...sim!, mc, state: step(mc.circuit, sim!.state, 0) } : { mc, state: step(mc.circuit, createInitialState(mc.circuit), 0), paused: false }
+    if (same) set({ sim: { ...sim!, mc, state: step(mc.circuit, sim!.state, 0) } })
+    else restartSimulation({ mc, state: step(mc.circuit, createInitialState(mc.circuit), 0), paused: false })
+  }
+
+  /** 補上缺少的訊號名稱：不列入復原歷史，但要存檔 */
+  const ensureSignals = () => {
+    const { doc, products } = get()
+    const named = ensureModuleSignals(doc, products)
+    if (named === doc) return
+    set({ doc: named, saved: false })
+    scheduleSave()
+  }
+
+  /** 套用程序控制的操作結果（自動、單步） */
+  const applySequencer = (r: SequencerTick) => {
+    const { sim, seq, trace, doc } = get()
+    if (!sim) return
+    const next = applySequencerTick(sim.mc.circuit, doc.sequence ?? EMPTY_SEQUENCE, { sim: sim.state, seq, trace }, r)
+    set({ sim: { ...sim, state: next.sim }, seq: next.seq, ...(next.trace && { trace: next.trace }) })
+  }
+
+  /** 程序控制要開始執行：還沒開始模擬時先開始，暫停中則繼續 */
+  const ensureRunning = () => {
+    const sim = get().sim
+    if (!sim) get().startSimulation()
+    else if (sim.paused) set({ sim: { ...sim, paused: false } })
   }
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined
@@ -349,12 +434,14 @@ export const useModuleStore = create<State>()((set, get) => {
     return new Matrix4().makeTranslation(x, y, z).toArray()
   }
 
-  const addInstanceOf = async (product: Product) => {
+  const addInstanceOf = async (product: Product, params?: ModuleInstance['params']) => {
     if (!hasModel(product)) throw new Error(`「${productLabel(product)}」還沒有 3D 檔：在產品庫點它，再選擇要附加的 STEP 檔`)
     const mesh = await ensureMesh(product)
     if (!mesh) throw new Error(`「${productLabel(product)}」缺少 3D 資料`)
     const wasEmpty = get().doc.instances.length === 0
-    const { doc: next, instanceId } = ops.addInstance(get().doc, product.id, placementBeside(mesh))
+    const added = ops.addInstance(get().doc, product.id, placementBeside(mesh))
+    const { instanceId } = added
+    const next = params ? { ...added.doc, instances: added.doc.instances.map((i) => (i.id === instanceId ? { ...i, params } : i)) } : added.doc
     commit(next)
     // 窄螢幕：加入零件後收起產品庫抽屜，讓使用者看到剛加入的零件
     set((s) => ({ selected: instanceId, drawer: undefined, ...(wasEmpty && { fitRequest: s.fitRequest + 1, fitTarget: undefined }) }))
@@ -374,7 +461,9 @@ export const useModuleStore = create<State>()((set, get) => {
     await useLibraryStore.getState().saveProduct(product)
   }
 
-  const openDoc = async (doc: ModuleDoc) => {
+  const openDoc = async (raw: ModuleDoc) => {
+    // 舊版或外部匯入的程序資料先整理過
+    const doc = raw.sequence ? { ...raw, sequence: sanitizeSequence(raw.sequence) } : raw
     set({
       doc,
       past: [],
@@ -385,7 +474,9 @@ export const useModuleStore = create<State>()((set, get) => {
       pendingMate: undefined,
       tubeFrom: undefined,
       saved: true,
-      ...(get().mode === 'simulate' || get().mode === 'tube' ? { mode: 'select' as const, sim: undefined } : {}),
+      ...(get().mode === 'simulate' || get().mode === 'tube'
+        ? { mode: 'select' as const, sim: undefined, seq: { ...SEQUENCER_IDLE, continuous: get().seq.continuous }, trace: undefined }
+        : {}),
     })
     remember(doc.id)
     await ensureDocMeshes(doc)
@@ -457,6 +548,8 @@ export const useModuleStore = create<State>()((set, get) => {
     measure: [],
     showDims: false,
     drawingOpen: false,
+    seq: SEQUENCER_IDLE,
+    sequenceOpen: false,
 
     init() {
       initPromise ??= initialize()
@@ -634,7 +727,9 @@ export const useModuleStore = create<State>()((set, get) => {
       const product = inst && products[inst.productId]
       if (!product) return
       try {
-        await addInstanceOf(product)
+        // 負載等參數一起複製；訊號名稱不複製（避免重複），開始模擬時會自動指定
+        const params = Object.fromEntries(Object.entries(inst.params ?? {}).filter(([k]) => !SIGNAL_PARAM_NAMESPACE[k] && k !== 'trigger'))
+        await addInstanceOf(product, Object.keys(params).length ? params : undefined)
       } catch (err) {
         fail(err)
       }
@@ -738,13 +833,23 @@ export const useModuleStore = create<State>()((set, get) => {
         get().startSimulation()
         return
       }
-      set({ mode, connectFrom: undefined, draftPort: undefined, measure: [], tubeFrom: undefined, sim: undefined })
+      const leaving = get().mode === 'simulate'
+      set({
+        mode,
+        connectFrom: undefined,
+        draftPort: undefined,
+        measure: [],
+        tubeFrom: undefined,
+        sim: undefined,
+        ...(leaving && { seq: { ...SEQUENCER_IDLE, continuous: get().seq.continuous }, trace: undefined }),
+      })
     },
 
     startSimulation() {
+      // 程序控制需要氣缸代號與線圈輸出：缺少的先補上
+      ensureSignals()
       set({
         mode: 'simulate',
-        sim: freshSimulation(get().doc),
         connectFrom: undefined,
         pendingMate: undefined,
         draftPort: undefined,
@@ -753,14 +858,15 @@ export const useModuleStore = create<State>()((set, get) => {
         selected: undefined,
         selectedTube: undefined,
       })
+      restartSimulation(freshSimulation(get().doc))
     },
 
     stopSimulation() {
-      set({ mode: 'select', sim: undefined })
+      set({ mode: 'select', sim: undefined, seq: { ...SEQUENCER_IDLE, continuous: get().seq.continuous }, trace: undefined })
     },
 
     resetSimulation() {
-      if (get().sim) set({ sim: freshSimulation(get().doc) })
+      if (get().sim) restartSimulation(freshSimulation(get().doc))
     },
 
     toggleSimulationPause() {
@@ -769,9 +875,10 @@ export const useModuleStore = create<State>()((set, get) => {
     },
 
     tickSimulation(dt) {
-      const sim = get().sim
+      const { sim, seq, trace, doc } = get()
       if (!sim || sim.paused) return
-      set({ sim: { ...sim, state: step(sim.mc.circuit, sim.state, dt) } })
+      const r = advanceRun(sim.mc.circuit, doc.sequence ?? EMPTY_SEQUENCE, { sim: sim.state, seq, trace }, dt)
+      set({ sim: { ...sim, state: r.sim }, seq: r.seq, ...(r.trace && { trace: r.trace }) })
     },
 
     simulationInteract(nodeId, action = 'toggle') {
@@ -988,6 +1095,66 @@ export const useModuleStore = create<State>()((set, get) => {
       const { doc } = get()
       set({ doc: { ...doc, drawing: { ...doc.drawing, ...patch }, updatedAt: Date.now() }, saved: false })
       scheduleSave()
+    },
+
+    setInstanceParams(instanceId, patch) {
+      const { doc } = get()
+      const inst = doc.instances.find((i) => i.id === instanceId)
+      if (!inst) return
+      const params: Record<string, ParamValue> = { ...inst.params }
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === undefined) delete params[key]
+        else params[key] = value
+      }
+      const next: ModuleInstance = Object.keys(params).length ? { ...inst, params } : { id: inst.id, productId: inst.productId }
+      commit({ ...doc, instances: doc.instances.map((i) => (i.id === instanceId ? next : i)), updatedAt: Date.now() })
+    },
+
+    ensureSignals,
+
+    setSequence(sequence) {
+      if (get().seq.mode !== 'off') return
+      const { doc } = get()
+      set({ doc: { ...doc, sequence, updatedAt: Date.now() }, saved: false })
+      scheduleSave()
+    },
+
+    seqAuto() {
+      const sequence = get().doc.sequence
+      if (!sequence?.steps.length) return
+      ensureRunning()
+      applySequencer(runSequence(sequence, get().seq, get().seq.continuous))
+    },
+
+    seqStep() {
+      const sequence = get().doc.sequence
+      if (!sequence?.steps.length) return
+      ensureRunning()
+      applySequencer(stepSequence(sequence, get().seq, get().sim?.state.signals ?? {}))
+    },
+
+    seqStop() {
+      set({ seq: stopSequence(get().seq) })
+    },
+
+    seqHome() {
+      const sim = get().sim
+      if (!sim) return
+      restartSimulation({ ...sim, state: step(sim.mc.circuit, createInitialState(sim.mc.circuit), 0) })
+    },
+
+    setContinuous(on) {
+      set({ seq: { ...get().seq, continuous: on } })
+    },
+
+    toggleSequencePanel(open = !get().sequenceOpen) {
+      if (!open) {
+        set({ sequenceOpen: false })
+        return
+      }
+      ensureSignals()
+      // 面板佔掉 3D 畫面下方：重新縮放，讓整個模組都看得到
+      set((s) => ({ sequenceOpen: true, fitRequest: s.fitRequest + 1, fitTarget: undefined }))
     },
 
     loadDocMeshes() {

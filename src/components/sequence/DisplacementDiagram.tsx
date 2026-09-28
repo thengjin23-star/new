@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Trace } from '../../store/trace'
-import { diagramGeometry, type DiagramMode } from '../../store/traceDiagram'
+import { diagramGeometry, LABEL_SIZE, LABEL_SUB_SIZE, type DiagramMode } from '../../store/traceDiagram'
 
 /** 監看元素寬度（圖表依容器寬度重新排版） */
 function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
@@ -63,9 +63,15 @@ export function DisplacementDiagram({ trace, mode, now }: { trace: Trace | undef
             <g key={r.label} data-row={r.label} data-points={r.points.length}>
               <line x1={geometry.left} y1={r.top} x2={geometry.right} y2={r.top} stroke="#e2e8f0" />
               <line x1={geometry.left} y1={r.top + r.height} x2={geometry.right} y2={r.top + r.height} stroke="#e2e8f0" />
-              <text x={geometry.left - 8} y={r.top + r.height / 2} fontSize={11} textAnchor="end" dominantBaseline="central" fill="#334155">
-                {r.label}
+              <text x={geometry.left - 8} y={r.top + r.height / 2 - (r.lines.length > 1 ? 6 : 0)} fontSize={LABEL_SIZE} textAnchor="end" dominantBaseline="central" fill="#334155">
+                <title>{r.label}</title>
+                {r.lines[0]}
               </text>
+              {r.lines[1] && (
+                <text x={geometry.left - 8} y={r.top + r.height / 2 + 7} fontSize={LABEL_SUB_SIZE} textAnchor="end" dominantBaseline="central" fill="#64748b">
+                  {r.lines[1]}
+                </text>
+              )}
               {r.kind === 'cylinder' && (
                 <>
                   <text x={geometry.left - 2} y={r.top} fontSize={8} textAnchor="end" dominantBaseline="central" fill="#94a3b8">

@@ -1,4 +1,5 @@
-import { Html, Line } from '@react-three/drei'
+import { Line } from '@react-three/drei'
+import { OverlayHtml } from './OverlayHtml'
 import type { Vec3 } from '../geometry/vec3'
 import { formatMm } from './bounds'
 import { useModuleStore } from './moduleStore'
@@ -27,14 +28,14 @@ export function MeasureOverlay() {
       {b && (
         <>
           <Line points={[a, b]} color={MEASURE_COLOR} lineWidth={2} depthTest={false} renderOrder={5} />
-          <Html position={[(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]} center zIndexRange={[30, 0]}>
+          <OverlayHtml position={[(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]} center zIndexRange={[30, 0]}>
             <div className={labelClass} style={{ background: MEASURE_COLOR }} data-measure>
               {formatMm(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]))} mm
               <span className="ml-1.5 font-normal opacity-90">
                 ΔX {formatMm(Math.abs(b[0] - a[0]))}　ΔY {formatMm(Math.abs(b[1] - a[1]))}　ΔZ {formatMm(Math.abs(b[2] - a[2]))}
               </span>
             </div>
-          </Html>
+          </OverlayHtml>
         </>
       )}
     </group>
@@ -69,11 +70,11 @@ export function DimensionLines() {
       {dims.map(([a, b, text]) => (
         <group key={text}>
           <Line points={[a, b]} color={DIM_COLOR} lineWidth={1.5} />
-          <Html position={[(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]} center zIndexRange={[25, 0]}>
+          <OverlayHtml position={[(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2]} center zIndexRange={[25, 0]}>
             <div className={labelClass} style={{ background: DIM_COLOR }}>
               {text} mm
             </div>
-          </Html>
+          </OverlayHtml>
         </group>
       ))}
     </group>

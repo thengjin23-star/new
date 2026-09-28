@@ -15,12 +15,10 @@ import {
   registry,
   runSequence,
   SEQUENCER_IDLE,
-  setOutputs,
   solve,
   step,
   stepSequence,
   stopSequence,
-  tickSequence,
   type Circuit,
   type InteractAction,
   type Params,
@@ -28,6 +26,7 @@ import {
   type PortKey,
   type Sequence,
   type SequencerState,
+  type SequencerTick,
   type SimState,
 } from '../engine'
 import { createCircuitInfo, EMPTY_SEQUENCE, sanitizeCircuit, sanitizeSequence, stripEdge, stripNode, type CircuitInfo } from './circuitDoc'
@@ -46,7 +45,8 @@ import {
 } from './flow'
 import { assignSignalNames } from './signalNames'
 import { dedupeTag, nextTag } from './tags'
-import { createTrace, recordTrace, type Trace } from './trace'
+import { advanceRun, applySequencerTick } from './sequenceRun'
+import { createTrace, type Trace } from './trace'
 
 /**
  * - idle：編輯模式，可放元件、拉管線、旋轉、刪除
@@ -501,14 +501,8 @@ export const useCircuitStore = create<CircuitStore>()(
         tick(dt) {
           const { status, circuit, sim, sequence, seq, trace } = get()
           if (status !== 'running') return
-          let next = step(circuit, sim, dt)
-          let seqState = seq
-          if (seq.mode !== 'off') {
-            const r = tickSequence(sequence, seq, next.signals, dt)
-            seqState = r.state
-            if (r.set) next = setOutputs(circuit, next, r.set)
-          }
-          set({ sim: next, seq: seqState, ...(trace && { trace: recordTrace(trace, next, seqState, sequence) }) })
+          const r = advanceRun(circuit, sequence, { sim, seq, trace }, dt)
+          set({ sim: r.sim, seq: r.seq, ...(r.trace && { trace: r.trace }) })
         },
 
         interact(nodeId, action) {
@@ -569,10 +563,10 @@ export const useCircuitStore = create<CircuitStore>()(
       }
 
       /** 套用程序控制的結果：更新狀態、設定新一步的輸出，並記錄到位移－步驟圖 */
-      function applySequencer(r: { state: SequencerState; set?: Readonly<Record<string, boolean>> }) {
-        const { circuit, sim, sequence, trace } = get()
-        const next = r.set ? setOutputs(circuit, sim, r.set) : sim
-        set({ seq: r.state, sim: next, ...(trace && { trace: recordTrace(trace, next, r.state, sequence) }) })
+      function applySequencer(r: SequencerTick) {
+        const { circuit, sim, seq, sequence, trace } = get()
+        const next = applySequencerTick(circuit, sequence, { sim, seq, trace }, r)
+        set({ seq: next.seq, sim: next.sim, ...(next.trace && { trace: next.trace }) })
       }
     },
     {

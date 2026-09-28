@@ -1,3 +1,5 @@
+import type { Params, Sequence } from '../engine'
+
 /** 指向某個零件實例上的某個埠 */
 export interface PortRef {
   instance: string
@@ -8,6 +10,11 @@ export interface PortRef {
 export interface ModuleInstance {
   id: string
   productId: string
+  /**
+   * 這個零件在模組中的應用參數（氣缸代號、線圈訊號、負載…），覆蓋產品氣動功能的參數。
+   * 同一個產品在不同模組、不同位置可以不同。
+   */
+  params?: Params
 }
 
 /**
@@ -72,6 +79,8 @@ export interface ModuleDoc {
   tubes?: ModuleTube[]
   /** 模擬用的供氣口 */
   supply?: ModuleSupply
+  /** 程序控制（3D 模擬時執行；產生迴路圖時一併帶入） */
+  sequence?: Sequence
   /** 根零件（沒有父零件）的位置；鎖合的零件由 mates 推導，不存在這裡 */
   placements: Record<string, Mat4>
   createdAt: number

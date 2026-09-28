@@ -39,18 +39,22 @@ const MAX_SAMPLES = 3600
 
 const outputNumber = (name: string) => Number(name.replace(/\D/g, '')) || 0
 
-export function createTrace(nodes: readonly CircuitFlowNode[], circuit: Circuit, sim: SimState): Trace {
-  const inCircuit = new Set(circuit.nodes.map((n) => n.id))
+/**
+ * 依迴路的元件建立記錄：每支有代號的氣缸一列（依代號排序，沒有代號的排後面），每個電氣輸出一列（依編號）。
+ * describe 提供元件的說明（迴路圖的標號、3D 模組的型號），顯示在代號後面。
+ */
+export function traceFromCircuit(circuit: Circuit, sim: SimState, describe: (nodeId: string) => string | undefined = () => undefined): Trace {
   const cylinders: (TraceRow & { order: string })[] = []
   const outputs = new Set<string>()
-  for (const n of nodes) {
-    if (!isPneumaticNode(n) || !inCircuit.has(n.id) || !registry.has(n.data.componentType)) continue
-    const def = registry.get(n.data.componentType)
-    const params = resolveParams(def, n.data.params)
+  for (const n of circuit.nodes) {
+    if (!registry.has(n.type)) continue
+    const def = registry.get(n.type)
+    const params = resolveParams(def, n.params)
     if (def.category === 'actuator') {
       const letter = strParam(params, 'sensor')
-      const label = letter ? `${letter}${n.data.tag ? `（${n.data.tag}）` : ''}` : (n.data.tag ?? def.label)
-      cylinders.push({ key: n.id, label, kind: 'cylinder', order: letter || `~${n.data.tag ?? ''}` })
+      const text = describe(n.id)
+      const label = letter ? `${letter}${text ? `（${text}）` : ''}` : (text ?? def.label)
+      cylinders.push({ key: n.id, label, kind: 'cylinder', order: letter || `~${text ?? ''}` })
     }
     for (const key of ['coilL', 'coilR']) {
       const name = strParam(params, key)
@@ -62,6 +66,12 @@ export function createTrace(nodes: readonly CircuitFlowNode[], circuit: Circuit,
     ...[...outputs].sort((a, b) => outputNumber(a) - outputNumber(b)).map((name): TraceRow => ({ key: name, label: name, kind: 'output' })),
   ]
   return { rows, samples: [sampleOf(rows, sim)], marks: [], lastIndex: -1 }
+}
+
+/** 迴路圖：氣缸以標號說明 */
+export function createTrace(nodes: readonly CircuitFlowNode[], circuit: Circuit, sim: SimState): Trace {
+  const tags = new Map(nodes.flatMap((n) => (isPneumaticNode(n) && n.data.tag ? [[n.id, n.data.tag] as const] : [])))
+  return traceFromCircuit(circuit, sim, (id) => tags.get(id))
 }
 
 function sampleOf(rows: readonly TraceRow[], sim: SimState): TraceSample {

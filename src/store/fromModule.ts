@@ -1,8 +1,10 @@
-import { SUPPLY_NODE, type ModuleCircuit, type NetEndpoint } from '../assembly/moduleCircuit'
+import { moduleColumns, type ModuleRole } from '../assembly/moduleColumns'
+import type { ModuleCircuit, NetEndpoint } from '../assembly/moduleCircuit'
+import { moduleSignalPatches } from '../assembly/moduleSignals'
 import type { ProductMap } from '../assembly/moduleOps'
 import type { ModuleDoc } from '../assembly/types'
 import { getSymbol } from '../components/symbols/symbolRegistry'
-import { CYLINDER_LETTERS, OUTPUT_NAMES, registry, VALVE_SPECS, type CircuitNode, type Params, type ValveSpec } from '../engine'
+import { registry, type CircuitNode } from '../engine'
 import { today } from '../utils/date'
 import { newId, type CircuitFlowNode, type PneumaticFlowNode, type TubeFlowEdge } from './flow'
 
@@ -15,11 +17,9 @@ import { newId, type CircuitFlowNode, type PneumaticFlowNode, type TubeFlowEdge 
  * - 接頭、集裝座不畫（以管線表示）；同一個網路的埠以管線串接（分歧處顯示分歧點）
  */
 
-type Role = 'actuator' | 'flow' | 'valve' | 'vent' | 'prep' | 'supply' | 'other'
-
 interface Placed {
   node: CircuitNode
-  role: Role
+  role: ModuleRole
   x: number
   y: number
   tag?: string
@@ -28,24 +28,6 @@ interface Placed {
 
 const GAP_X = 150
 
-function roleOf(node: CircuitNode): Role {
-  if (node.id === SUPPLY_NODE || node.type === 'airSupply') return 'supply'
-  const def = registry.get(node.type)
-  if (node.type === 'silencer' || node.type === 'exhaust') return 'vent'
-  switch (def.category) {
-    case 'actuator':
-      return 'actuator'
-    case 'flow':
-      return 'flow'
-    case 'valve':
-      return 'valve'
-    case 'source':
-      return 'prep'
-    default:
-      return 'other'
-  }
-}
-
 export interface CircuitFromModule {
   nodes: CircuitFlowNode[]
   edges: TubeFlowEdge[]
@@ -53,81 +35,13 @@ export interface CircuitFromModule {
 
 export function circuitFromModule(mc: ModuleCircuit, doc: ModuleDoc, products: ProductMap, date = new Date()): CircuitFromModule {
   const nodes = mc.circuit.nodes
-  const byId = new Map(nodes.map((n) => [n.id, n]))
-  // 依模組中零件的順序
-  const order = new Map(doc.instances.map((i, k) => [i.id, k]))
-  const rank = (id: string) => order.get(id) ?? 1e6
-  const roles = new Map(nodes.map((n) => [n.id, roleOf(n)]))
-
-  // 相鄰關係：同一個網路中的兩個端點
-  const neighbors = new Map<string, { port: string; other: NetEndpoint }[]>()
-  for (const net of mc.nets) {
-    for (const a of net) {
-      for (const b of net) {
-        if (a.node === b.node) continue
-        const list = neighbors.get(a.node) ?? []
-        list.push({ port: a.port, other: b })
-        neighbors.set(a.node, list)
-      }
-    }
-  }
-  const neighborsVia = (id: string, port: string) => (neighbors.get(id) ?? []).filter((n) => n.port === port).map((n) => n.other)
-
-  // ---- 分欄：每顆閥一欄 ----
-  const assigned = new Set<string>()
-  interface Column {
-    valve?: CircuitNode
-    actuator?: CircuitNode
-    flows: { node: CircuitNode; actuatorPort?: string; valvePort?: string }[]
-    vents: { node: CircuitNode; valvePort: string }[]
-  }
-  const columns: Column[] = []
-  const valves = nodes.filter((n) => roles.get(n.id) === 'valve').sort((a, b) => rank(a.id) - rank(b.id))
-  for (const valve of valves) {
-    const col: Column = { valve, flows: [], vents: [] }
-    assigned.add(valve.id)
-    const def = registry.get(valve.type)
-    for (const port of def.ports) {
-      for (const other of neighborsVia(valve.id, port.id)) {
-        const role = roles.get(other.node)
-        const node = byId.get(other.node)!
-        if (assigned.has(node.id)) continue
-        if (port.role === 'working' && role === 'flow') {
-          assigned.add(node.id)
-          const entry: Column['flows'][number] = { node, valvePort: port.id }
-          // 速控閥的另一端接的氣缸
-          for (const p of registry.get(node.type).ports) {
-            if (p.id === other.port) continue
-            for (const far of neighborsVia(node.id, p.id)) {
-              if (roles.get(far.node) !== 'actuator') continue
-              if (!col.actuator) {
-                col.actuator = byId.get(far.node)
-                assigned.add(far.node)
-              }
-              if (col.actuator?.id === far.node) entry.actuatorPort = far.port
-            }
-          }
-          col.flows.push(entry)
-        } else if (port.role === 'working' && role === 'actuator' && !col.actuator) {
-          col.actuator = node
-          assigned.add(node.id)
-        } else if ((port.role === 'exhaust' || port.role === 'supply') && role === 'vent') {
-          assigned.add(node.id)
-          col.vents.push({ node, valvePort: port.id })
-        }
-      }
-    }
-    columns.push(col)
-  }
-  // 沒有閥驅動的氣缸（或速控閥）：各自一欄
-  for (const n of nodes.filter((n) => !assigned.has(n.id) && (roles.get(n.id) === 'actuator' || roles.get(n.id) === 'flow')).sort((a, b) => rank(a.id) - rank(b.id))) {
-    assigned.add(n.id)
-    columns.push(roles.get(n.id) === 'actuator' ? { actuator: n, flows: [], vents: [] } : { flows: [{ node: n }], vents: [] })
-  }
+  // 分欄：每顆閥一欄（依模組中零件的順序）
+  const layout = moduleColumns(mc, doc)
+  const { columns, roles, neighbors, rank } = layout
 
   // ---- 各欄的座標 ----
   const placed = new Map<string, Placed>()
-  const put = (node: CircuitNode, role: Role, x: number, y: number) => placed.set(node.id, { node, role, x, y })
+  const put = (node: CircuitNode, role: ModuleRole, x: number, y: number) => placed.set(node.id, { node, role, x, y })
   const sym = (node: CircuitNode) => getSymbol(node.type)
   const hasFlows = columns.some((c) => c.flows.length)
   const actuatorH = Math.max(0, ...columns.map((c) => (c.actuator ? sym(c.actuator).height : 0)))
@@ -142,7 +56,7 @@ export function circuitFromModule(mc: ModuleCircuit, doc: ModuleDoc, products: P
   let cursor = 0
   for (const col of columns) {
     // 以「氣缸（沒有氣缸時以閥）」定欄位；先算相對位置，最後整欄平移到 cursor
-    const items: { node: CircuitNode; role: Role; x: number; y: number }[] = []
+    const items: { node: CircuitNode; role: ModuleRole; x: number; y: number }[] = []
     const actSym = col.actuator && sym(col.actuator)
     if (col.actuator) items.push({ node: col.actuator, role: 'actuator', x: 0, y: yActuator })
     // 速控閥：對齊氣缸的埠；沒有氣缸時依閥埠的順序排開
@@ -245,20 +159,8 @@ export function circuitFromModule(mc: ModuleCircuit, doc: ModuleDoc, products: P
   if (supply) placed.get(supply.id)!.tag = `0Z${z++}`
   for (const n of prep) if (roles.get(n.id) === 'prep') placed.get(n.id)!.tag = `0Z${z++}`
 
-  // ---- 訊號名稱：依欄的順序，氣缸代號 A、B…，電磁線圈 Y1、Y2…（可直接用於程序控制） ----
-  const signalParams = new Map<string, Params>()
-  let letter = 0
-  let coil = 0
-  columns.forEach((col) => {
-    if (col.actuator && CYLINDER_LETTERS[letter]) signalParams.set(col.actuator.id, { sensor: CYLINDER_LETTERS[letter++] })
-    const valve = col.valve
-    const spec = valve && (VALVE_SPECS as Readonly<Record<string, ValveSpec>>)[valve.type]
-    if (!valve || !spec) return
-    const names: Record<string, string> = {}
-    if (spec.left.includes('solenoid') && OUTPUT_NAMES[coil]) names.coilL = OUTPUT_NAMES[coil++]
-    if (spec.right.includes('solenoid') && OUTPUT_NAMES[coil]) names.coilR = OUTPUT_NAMES[coil++]
-    if (Object.keys(names).length) signalParams.set(valve.id, names)
-  })
+  // ---- 訊號名稱：模組已指定的保留；缺少的依欄的順序補上（氣缸代號 A、B…，電磁線圈 Y1、Y2…），可直接用於程序控制 ----
+  const signalParams = moduleSignalPatches(mc, doc, layout)
 
   // ---- 節點 ----
   const flowNodes: CircuitFlowNode[] = []

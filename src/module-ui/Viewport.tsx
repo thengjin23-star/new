@@ -1,4 +1,5 @@
-import { GizmoHelper, GizmoViewport, Html, OrbitControls } from '@react-three/drei'
+import { GizmoHelper, GizmoViewport, OrbitControls } from '@react-three/drei'
+import { OverlayHtml } from './OverlayHtml'
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box3, Color, Matrix4, Vector3, type Group, type PerspectiveCamera } from 'three'
@@ -12,9 +13,40 @@ import { useModuleStore, useTransforms } from './moduleStore'
 import { DimensionLines, MeasureOverlay } from './Measure'
 import { PortMarker } from './PortMarker'
 import { TubeView } from './TubeView'
-import { cylinderMotion, interactionOf, useSimPiston, useSimValveActive } from './simulation'
+import { cylinderMotion, interactionOf, meshCenter, useSimPiston, useSimSignalChip, useSimValveActive } from './simulation'
 
 const DEFAULT_COLOR = new Color('#b9c1c9')
+
+/**
+ * 模擬中的訊號標籤（零件中央）：氣缸代號與 a0／a1 燈號、電磁閥線圈的輸出、壓力開關；
+ * 沒有可動件的氣缸另外顯示伸出百分比。
+ */
+function SignalChip({ nodeId, mesh, stroke }: { nodeId: string; mesh: Tessellation; stroke?: number }) {
+  const chip = useSimSignalChip(nodeId)
+  const center = useMemo(() => meshCenter(mesh), [mesh])
+  if (!chip && stroke === undefined) return null
+  const [title, ...lamps] = chip ?? ['']
+  return (
+    <OverlayHtml position={center} center zIndexRange={[20, 0]}>
+      <span className="pointer-events-none flex items-center gap-1 rounded bg-slate-800/85 px-1.5 py-0.5 text-[10px] whitespace-nowrap text-white" data-signal-chip={title || lamps.map((l) => l.split(':')[0]).join(' ')}>
+        {title && <strong className="font-mono">{title}</strong>}
+        {lamps.map((l) => {
+          const [name, on] = l.split(':')
+          const output = /^Y/.test(name)
+          return (
+            <span key={name} className="flex items-center gap-0.5 font-mono" data-lamp={name} data-on={on === '1' || undefined}>
+              <span
+                className={`inline-block h-2 w-2 rounded-full border ${on === '1' ? (output ? 'border-amber-300 bg-amber-400' : 'border-green-300 bg-green-400') : 'border-slate-400 bg-transparent'}`}
+              />
+              {name}
+            </span>
+          )
+        })}
+        {stroke !== undefined && <span>伸出 {Math.round(stroke * 100)}%</span>}
+      </span>
+    </OverlayHtml>
+  )
+}
 
 function InstanceView({ instance, product, mesh, matrix }: { instance: ModuleInstance; product: Product; mesh: Tessellation; matrix: number[] }) {
   const group = useRef<Group>(null)
@@ -132,11 +164,7 @@ function InstanceView({ instance, product, mesh, matrix }: { instance: ModuleIns
           part
         )
       })}
-      {simulating && piston !== undefined && !motion && (
-        <Html position={product.ports[0]?.frame.origin ?? [0, 0, 0]} center zIndexRange={[20, 0]}>
-          <span className="rounded bg-slate-800/85 px-1.5 py-0.5 text-[10px] whitespace-nowrap text-white">伸出 {Math.round(piston * 100)}%</span>
-        </Html>
-      )}
+      {simulating && <SignalChip nodeId={instance.id} mesh={mesh} stroke={piston !== undefined && !motion ? piston : undefined} />}
       {defining && hover && (
         <mesh geometry={faceGeometry(product.source.sha256, hover.part, mesh.parts[hover.part], hover.face)} renderOrder={3}>
           <meshBasicMaterial color="#2563eb" transparent opacity={0.45} depthTest={false} />

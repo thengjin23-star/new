@@ -5,7 +5,7 @@ import { suggestPartners } from '../assembly/memory'
 import { getPort, mateChecks, mateRotation, usedPorts } from '../assembly/moduleOps'
 import { useLibraryStore } from '../catalog/library'
 import { effectivePneumatic, isCircuitType, pneumaticTypeLabel } from '../catalog/pneumatic'
-import { CATEGORY_LABEL, hasModel, type Product, type ProductCategory } from '../catalog/types'
+import { CATEGORY_LABEL, hasModel, productLabel, type Product, type ProductCategory } from '../catalog/types'
 import { PneumaticFunctionDialog } from '../components/PneumaticFunctionEditor'
 import { SymbolPreview } from '../components/SymbolPreview'
 import { formatSpec, type MateLevel } from '../threads'
@@ -13,7 +13,7 @@ import { portLabel } from './labels'
 import { tubeFrames, useModuleStore } from './moduleStore'
 import { cylinderMotion } from './simulation'
 import { deriveModuleCircuit } from '../assembly/moduleCircuit'
-import { registry } from '../engine'
+import { registry, SIGNAL_PARAM_NAMESPACE } from '../engine'
 import type { Vec3 } from '../geometry/vec3'
 import { bezierLength, estimateTubeLength, formatMeters, tubeBom, tubeControlPoints } from '../assembly/tubes'
 import { LEVEL_COLOR } from '../components/levels'
@@ -93,6 +93,7 @@ function PartTab() {
     <div className="space-y-4 p-3">
       <ProductForm key={product.id} product={product} />
       <PneumaticSection product={product} />
+      <SignalSection key={inst.id} instanceId={inst.id} product={product} />
       <MotionSection product={product} />
       <section>
         <header className="mb-2 flex items-center justify-between">
@@ -337,6 +338,73 @@ function PneumaticSection({ product }: { product: Product }) {
         <p className="mt-1 text-xs leading-5 text-slate-500">尚未設定：設定後這個產品就能放進「迴路圖」模擬。</p>
       )}
       {editing && <PneumaticFunctionDialog product={product} onClose={() => setEditing(false)} />}
+    </section>
+  )
+}
+
+const AUTO = '__auto'
+
+/**
+ * 訊號（程序控制用）：氣缸代號、電磁線圈的輸出、壓力開關、滾輪閥的觸發位置。
+ * 記在這個模組的零件上（同一個產品在不同位置可以不同）；「自動」會在開始模擬或打開程序時依序指定。
+ */
+function SignalSection({ instanceId, product }: { instanceId: string; product: Product }) {
+  const doc = useModuleStore((s) => s.doc)
+  const products = useModuleStore((s) => s.products)
+  const setInstanceParams = useModuleStore((s) => s.setInstanceParams)
+  const pn = effectivePneumatic(product)
+  const def = pn && isCircuitType(pn.type) && registry.has(pn.type) ? registry.get(pn.type) : undefined
+  const keys = def?.params?.filter((p) => SIGNAL_PARAM_NAMESPACE[p.key] || p.key === 'trigger') ?? []
+  // 其他零件用掉的名稱（提醒重複）
+  const usedBy = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const inst of doc.instances) {
+      const p = inst.id === instanceId ? undefined : products[inst.productId]
+      const fn = p && effectivePneumatic(p)
+      if (!p || !fn || !registry.has(fn.type)) continue
+      for (const pd of registry.get(fn.type).params ?? []) {
+        const ns = SIGNAL_PARAM_NAMESPACE[pd.key]
+        const v = inst.params?.[pd.key]
+        if (ns && typeof v === 'string' && v) map.set(`${ns}:${v}`, [...(map.get(`${ns}:${v}`) ?? []), p.modelCode || productLabel(p)])
+      }
+    }
+    return map
+  }, [doc.instances, products, instanceId])
+  if (!def || !keys.length) return null
+  const params = doc.instances.find((i) => i.id === instanceId)?.params
+  return (
+    <section className="rounded-md border border-slate-200 p-2">
+      <h3 className="text-sm font-semibold text-slate-700">訊號（程序控制）</h3>
+      <div className="mt-1.5 grid grid-cols-2 gap-2">
+        {keys.map((p) => {
+          const value = params?.[p.key]
+          const ns = SIGNAL_PARAM_NAMESPACE[p.key]
+          const shared = ns && typeof value === 'string' && value ? usedBy.get(`${ns}:${value}`) : undefined
+          return (
+            <label key={p.key} className="block text-xs text-slate-500">
+              {p.label}
+              <select
+                value={typeof value === 'string' ? value : AUTO}
+                onChange={(e) => setInstanceParams(instanceId, { [p.key]: e.target.value === AUTO ? undefined : e.target.value })}
+                className="mt-0.5 h-8 w-full rounded-md border border-slate-300 bg-white px-1.5 text-sm text-slate-800"
+                data-signal-param={p.key}
+              >
+                <option value={AUTO}>自動</option>
+                {p.options?.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {shared && (
+                <span className={`mt-0.5 block text-[11px] leading-4 ${ns === 'coil' ? 'text-slate-500' : 'text-amber-700'}`}>
+                  {ns === 'coil' ? `與 ${shared.join('、')} 共用，會一起動作` : `與 ${shared.join('、')} 重複`}
+                </span>
+              )}
+            </label>
+          )
+        })}
+      </div>
     </section>
   )
 }
