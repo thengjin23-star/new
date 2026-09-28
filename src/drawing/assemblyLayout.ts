@@ -70,6 +70,8 @@ export interface AssemblySheetInput {
   balloons?: boolean
   dimensions?: boolean
   portTags?: boolean
+  /** 接在組立圖後面的其他圖紙張數（例如選型計算書），張數標示「1/3」會算進去 */
+  extraSheets?: number
 }
 
 export interface AssemblySheet extends Sheet {
@@ -651,7 +653,7 @@ export function layoutAssemblyDrawing(input: AssemblySheetInput): AssemblyDrawin
     const restBlocks = tableBlocks(input, ctx.tw, { bom: input.bom.slice(maxBomRows), maxBomRows: maxRestRows, ports: true, notes: true })
     rest = { blocks: restBlocks, layout: layoutOne(ctx, restBlocks, false) }
   }
-  const count = rest ? 2 : 1
+  const count = (rest ? 2 : 1) + (input.extraSheets ?? 0)
   const moved = [
     input.bom.length > maxBomRows ? '零件表（續）' : '',
     input.ports.length ? '對外接口表' : '',

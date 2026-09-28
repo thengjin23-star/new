@@ -344,6 +344,9 @@ export function cycleTimeOf(trace: Trace | undefined, now: number): number | und
   return t > 0 ? t : undefined
 }
 
+/** 輸入值（缸徑、行程、壓力、負載）的顯示：去掉多餘的零，例如 32、0.5 */
+export const plain = (v: number): string => (Number.isFinite(v) ? String(Math.round(v * 1000) / 1000) : '—')
+
 /** 顯示用數值：依大小保留適當的小數位數 */
 export function fmt(v: number): string {
   if (!Number.isFinite(v)) return '—'

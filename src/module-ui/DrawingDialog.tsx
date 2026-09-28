@@ -8,9 +8,12 @@ import { downloadDxf, downloadPdf, downloadSvg } from '../drawing/exportSheets'
 import { assemblyInput, collectModuleDrawing, drawingOptions, FRONT_SIDES } from '../drawing/moduleDrawing'
 import type { ProjectedView, StandardView } from '../drawing/projection'
 import { scaleLabel } from '../drawing/sheet'
+import { layoutSizingSheets, sizingSheetCount } from '../drawing/sizingSheet'
 import { sheetToSvg } from '../drawing/svg'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import { useSettingsStore } from '../settings/settings'
+import { moduleSizingInputs } from '../sizing/moduleSizing'
+import { computeSizing } from '../sizing/sizing'
 import { useModuleStore } from './moduleStore'
 
 const selectClass = 'mt-0.5 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-800'
@@ -94,13 +97,23 @@ export function DrawingDialog({ onClose }: { onClose: () => void }) {
     return () => clearTimeout(timer)
   }, [text, setDrawingInfo])
 
+  // ---- 選型計算書（勾選時接在組立圖後面） ----
+  const sizing = useMemo(() => computeSizing(moduleSizingInputs(doc, products, doc.sizing), doc.sequence, doc.sizing), [doc, products])
+  const hasSizing = sizing.rows.length > 0
+
   // ---- 排版 ----
   const drawing = useMemo(() => {
     if (!projected) return undefined
-    return layoutAssemblyDrawing(assemblyInput(doc, source, projected.views, options, settings))
+    const input = assemblyInput(doc, source, projected.views, options, settings)
+    const sizingPages = options.sizingSheet && hasSizing ? sizingSheetCount(sizing, options.paper) : 0
+    const base = layoutAssemblyDrawing({ ...input, extraSheets: sizingPages })
+    if (!sizingPages) return base
+    const total = base.sheets.length + sizingPages
+    const extra = layoutSizingSheets({ paper: options.paper, title: input.title, summary: sizing, sheetLabel: (page) => `${base.sheets.length + page + 1}/${total}` })
+    return { ...base, sheets: [...base.sheets, ...extra] }
     // options 由 doc.drawing 與 settings 推導
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projected, doc, source, settings])
+  }, [projected, doc, source, settings, sizing, hasSizing])
   const stale = !!projected && projected.key !== projectKey
 
   const [page, setPage] = useState(0)
@@ -193,6 +206,10 @@ export function DrawingDialog({ onClose }: { onClose: () => void }) {
             {check('balloons', '件號氣球')}
             {check('portTags', '對外接口記號')}
             {check('iso', '等角圖')}
+            <label className={`flex items-center gap-2 text-sm ${hasSizing ? 'text-slate-700' : 'text-slate-400'}`} title={hasSizing ? '缸徑檢核、耗氣量、建議的閥與管徑' : '模組中沒有氣缸'}>
+              <input type="checkbox" checked={options.sizingSheet && hasSizing} disabled={!hasSizing} onChange={(e) => set({ sizingSheet: e.target.checked })} />
+              附選型計算書
+            </label>
           </div>
           <label className="block text-xs text-slate-500">
             圖號

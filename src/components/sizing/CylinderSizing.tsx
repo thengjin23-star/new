@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { ParamValue, Params } from '../../engine'
-import { fmt, LOAD_FACTOR_PRESETS, theoreticalForces, type SizingRow } from '../../sizing/sizing'
+import { fmt, LOAD_FACTOR_PRESETS, plain, theoreticalForces, type SizingRow } from '../../sizing/sizing'
 import { Button } from '../ui'
 
 const inputClass = 'mt-0.5 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-800'
@@ -93,7 +93,7 @@ export function CylinderSizing({
 
       <ul className="space-y-1 rounded-md bg-slate-50 p-2 text-[11px] leading-4 text-slate-600">
         <li>
-          計算壓力 {fmt(row.pressure)} MPa{pressureNote ? `（${pressureNote}）` : ''}
+          計算壓力 {plain(row.pressure)} MPa{pressureNote ? `（${pressureNote}）` : ''}
         </li>
         <li>
           理論出力：伸出 {fmt(force.extend)} N{single ? '（未扣彈簧反力）' : `、縮回 ${fmt(force.retract)} N`}
@@ -128,7 +128,10 @@ export function CylinderSizing({
         )}
         <li>
           耗氣量：每次伸出 {fmt(air.extend)} NL{single ? '' : `、縮回 ${fmt(air.retract)} NL`}
-          {tubeNL > 0 && `（含配管 ${fmt(tubeNL)} NL）`}
+          {tubeNL > 0 &&
+            (single || Math.abs(air.tubeExtend - air.tubeRetract) < 1e-9
+              ? `（${single ? '含' : '各含'}配管 ${fmt(air.tubeExtend)} NL）`
+              : `（含配管：伸出側 ${fmt(air.tubeExtend)}、縮回側 ${fmt(air.tubeRetract)} NL）`)}
         </li>
         <li>所需流量：{fmt(flow)} L/min（ANR）</li>
         <li data-valve-c={air.valve.C.toFixed(4)}>
