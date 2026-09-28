@@ -20,7 +20,13 @@ export function generateCircuitFromModule(): string | undefined {
   if (circuit.status !== 'idle') circuit.reset()
   // 程序以訊號名稱（Y1、a1…）描述，迴路圖沿用模組的名稱，所以可以直接帶過去
   const sequence = doc.sequence ?? EMPTY_SEQUENCE
-  circuit.replaceCircuit(nodes, edges, { ...createCircuitInfo(`${doc.name}（迴路圖）`), customer: doc.customer }, false, sequence)
+  circuit.replaceCircuit(
+    nodes,
+    edges,
+    { ...createCircuitInfo(`${doc.name}（迴路圖）`), customer: doc.customer, ...(doc.sizing && { sizing: doc.sizing }) },
+    false,
+    sequence,
+  )
   window.location.hash = '#/'
   const missingSupply = mc.warnings.some((w) => w.kind === 'no-supply')
   const ui = useCircuitUi.getState()

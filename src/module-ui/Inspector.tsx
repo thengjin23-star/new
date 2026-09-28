@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { bomColumns, bomTotal, buildBom } from '../assembly/bom'
 import { formatMoney } from '../utils/money'
 import { suggestPartners } from '../assembly/memory'
-import { getPort, mateChecks, mateRotation, usedPorts } from '../assembly/moduleOps'
+import { estimateTubeLengthOf, getPort, mateChecks, mateRotation, usedPorts } from '../assembly/moduleOps'
 import { useLibraryStore } from '../catalog/library'
 import { effectivePneumatic, isCircuitType, pneumaticTypeLabel } from '../catalog/pneumatic'
 import { CATEGORY_LABEL, hasModel, productLabel, type Product, type ProductCategory } from '../catalog/types'
@@ -10,16 +10,20 @@ import { PneumaticFunctionDialog } from '../components/PneumaticFunctionEditor'
 import { SymbolPreview } from '../components/SymbolPreview'
 import { formatSpec, type MateLevel } from '../threads'
 import { portLabel } from './labels'
-import { tubeFrames, useModuleStore } from './moduleStore'
+import { useModuleStore, useTransforms } from './moduleStore'
+import { AirSummary } from '../components/sizing/AirSummary'
+import { CylinderSizing } from '../components/sizing/CylinderSizing'
+import { moduleSizingInputs } from '../sizing/moduleSizing'
+import { computeSizing, cycleTimeOf } from '../sizing/sizing'
 import { cylinderMotion } from './simulation'
 import { deriveModuleCircuit } from '../assembly/moduleCircuit'
 import { registry, SIGNAL_PARAM_NAMESPACE } from '../engine'
 import type { Vec3 } from '../geometry/vec3'
-import { bezierLength, estimateTubeLength, formatMeters, tubeBom, tubeControlPoints } from '../assembly/tubes'
+import { formatMeters, tubeBom } from '../assembly/tubes'
 import { LEVEL_COLOR } from '../components/levels'
 import { Button, Dialog, Empty, LevelBadge } from '../components/ui'
 
-type Tab = 'part' | 'check' | 'bom'
+type Tab = 'part' | 'calc' | 'check' | 'bom'
 
 export function Inspector() {
   const [tab, setTab] = useState<Tab>('part')
@@ -30,6 +34,7 @@ export function Inspector() {
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'part', label: '零件' },
+    { id: 'calc', label: '計算' },
     { id: 'check', label: `檢查${checks.length ? `（${checks.length}）` : ''}` },
     { id: 'bom', label: 'BOM' },
   ]
@@ -58,10 +63,69 @@ export function Inspector() {
       </nav>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'part' && <PartTab />}
+        {tab === 'calc' && <CalcTab />}
         {tab === 'check' && <CheckTab />}
         {tab === 'bom' && <BomTab />}
       </div>
     </aside>
+  )
+}
+
+// ---------------- 計算（選型） ----------------
+
+/** 模組中氣缸的選型：負載與缸徑檢核、耗氣量（含實際 PU 管）、閥與管徑 */
+function CalcTab() {
+  const doc = useModuleStore((s) => s.doc)
+  const products = useModuleStore((s) => s.products)
+  const trace = useModuleStore((s) => s.trace)
+  const { setInstanceParams, setSizing, select, requestFit } = useModuleStore.getState()
+  const { transforms } = useTransforms()
+  const summary = useMemo(
+    () => computeSizing(moduleSizingInputs(doc, products, doc.sizing, transforms), doc.sequence, doc.sizing),
+    [doc, products, transforms],
+  )
+  const cycleTime = useMemo(() => cycleTimeOf(trace, trace?.samples[trace.samples.length - 1]?.t ?? 0), [trace])
+  if (!summary.rows.length) {
+    return (
+      <Empty>
+        模組中沒有氣缸（或氣缸還沒有設定氣動功能）。
+        <br />
+        設定後這裡會依負載檢核缸徑，並計算耗氣量、所需流量與建議的閥和管徑。
+      </Empty>
+    )
+  }
+  const pressureNote = doc.sizing?.pressure !== undefined ? '選型設定' : doc.supply ? '依供氣口' : '預設值'
+  return (
+    <div className="space-y-4 p-3">
+      <section>
+        <h3 className="mb-1.5 text-sm font-semibold text-slate-700">耗氣量</h3>
+        <AirSummary
+          summary={summary}
+          settings={doc.sizing ?? {}}
+          onChange={setSizing}
+          cycleTime={cycleTime}
+          onSelect={(id) => {
+            select(id)
+            requestFit(id)
+          }}
+        />
+      </section>
+      {summary.rows.map((row) => (
+        <section key={row.id} className="rounded-md border border-slate-200 p-2" data-calc-cylinder={row.label}>
+          <h3 className="text-sm font-semibold text-slate-700">{row.label}</h3>
+          <p className="mb-2 text-[11px] text-slate-500">
+            Ø{row.cylinder.bore} × {row.cylinder.stroke} mm{row.cylinder.single ? '（單動）' : ''}
+          </p>
+          <CylinderSizing
+            row={row}
+            params={doc.instances.find((i) => i.id === row.id)?.params}
+            onParam={(key, value) => setInstanceParams(row.id, { [key]: value })}
+            pressureNote={pressureNote}
+            applyNote="要改缸徑，請在「零件」頁用「更換零件」換成對應的氣缸。"
+          />
+        </section>
+      ))}
+    </div>
   )
 }
 
@@ -533,10 +597,7 @@ function TubePanel({ tubeId }: { tubeId: string }) {
   const products = useModuleStore((s) => s.products)
   const { setTubeLength, deleteTube, select } = useModuleStore.getState()
   const tube = doc.tubes?.find((t) => t.id === tubeId)
-  const estimate = useMemo(() => {
-    const frames = tube && tubeFrames(doc, products, tube)
-    return frames && tube ? estimateTubeLength(bezierLength(tubeControlPoints(frames[0], frames[1])), tube.od) : undefined
-  }, [doc, products, tube])
+  const estimate = useMemo(() => (tube ? estimateTubeLengthOf(doc, products, tube) : undefined), [doc, products, tube])
   const [text, setText] = useState(tube?.length !== undefined ? String(tube.length) : '')
   if (!tube) return <Empty>這條 PU 管已經刪除。</Empty>
   const commitLength = () => {

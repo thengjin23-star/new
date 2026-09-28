@@ -4,7 +4,7 @@ import { checkMate, specKey, type MateResult } from '../threads'
 import { newId } from '../utils/id'
 import type { Vec3 } from '../geometry/vec3'
 import { fromMatrix, mateTransform, toMatrix, worldFrame } from './frames'
-import { tubeCheck, TUBE_ERROR_TEXT, type TubeError } from './tubes'
+import { bezierLength, estimateTubeLength, tubeCheck, tubeControlPoints, TUBE_ERROR_TEXT, type TubeError } from './tubes'
 import type { Mat4, Mate, ModuleDoc, ModuleSupply, ModuleTube, PortRef } from './types'
 
 export type ProductMap = Readonly<Record<string, Product>>
@@ -62,6 +62,27 @@ export function tubeFrames(
     return port && world ? worldFrame(world, port.frame) : undefined
   })
   return a && b ? [a, b] : undefined
+}
+
+/** 依兩端目前的位置估算 PU 管的裁切長度（mm）；零件或埠已不存在時 undefined */
+export function estimateTubeLengthOf(
+  doc: ModuleDoc,
+  products: ProductMap,
+  tube: Pick<ModuleTube, 'a' | 'b' | 'od'>,
+  transforms: Readonly<Record<string, Mat4>> = computeTransforms(doc, products).transforms,
+): number | undefined {
+  const frames = tubeFrames(doc, products, tube, transforms)
+  return frames ? estimateTubeLength(bezierLength(tubeControlPoints(frames[0], frames[1])), tube.od) : undefined
+}
+
+/** PU 管的長度（mm）：有指定就用指定值，否則依兩端位置估算 */
+export function tubeLength(
+  doc: ModuleDoc,
+  products: ProductMap,
+  tube: ModuleTube,
+  transforms?: Readonly<Record<string, Mat4>>,
+): number | undefined {
+  return tube.length ?? estimateTubeLengthOf(doc, products, tube, transforms)
 }
 
 export interface TransformResult {

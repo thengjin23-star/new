@@ -1,4 +1,5 @@
 import type { Params, Sequence } from '../engine'
+import type { SizingSettings } from '../sizing/sizing'
 
 /** 指向某個零件實例上的某個埠 */
 export interface PortRef {
@@ -65,6 +66,8 @@ export interface DrawingInfo {
   balloons?: boolean
   portTags?: boolean
   iso?: boolean
+  /** 附選型計算書（另一張圖紙） */
+  sizingSheet?: boolean
 }
 
 export interface ModuleDoc {
@@ -81,6 +84,8 @@ export interface ModuleDoc {
   supply?: ModuleSupply
   /** 程序控制（3D 模擬時執行；產生迴路圖時一併帶入） */
   sequence?: Sequence
+  /** 選型計算的設定（每分鐘循環數、計算壓力） */
+  sizing?: SizingSettings
   /** 根零件（沒有父零件）的位置；鎖合的零件由 mates 推導，不存在這裡 */
   placements: Record<string, Mat4>
   createdAt: number

@@ -5,7 +5,7 @@ import { findAdapters, insertAdapter, type AdapterOption } from '../assembly/ada
 import { mateStatKeys, suggestPartners, type Suggestion } from '../assembly/memory'
 import { bomToCsv, buildBom } from '../assembly/bom'
 import * as ops from '../assembly/moduleOps'
-import { bezierLength, estimateTubeLength, isTubeSocket, tubeControlPoints } from '../assembly/tubes'
+import { isTubeSocket } from '../assembly/tubes'
 import type { DrawingInfo, ModuleDoc, ModuleInstance, ModuleTube, PortRef } from '../assembly/types'
 import { deriveModuleCircuit, type ModuleCircuit } from '../assembly/moduleCircuit'
 import { ensureModuleSignals } from '../assembly/moduleSignals'
@@ -27,6 +27,7 @@ import {
 } from '../engine'
 import { EMPTY_SEQUENCE, sanitizeSequence } from '../store/circuitDoc'
 import { advanceRun, applySequencerTick } from '../store/sequenceRun'
+import { sanitizeSizing, type SizingSettings } from '../sizing/sizing'
 import { traceFromCircuit, type Trace } from '../store/trace'
 import { exportLibraryArchive, exportModuleArchive, importArchive, LIBRARY_EXT, MODULE_EXT } from '../catalog/archive'
 import { detectCadFormat } from '../catalog/cad'
@@ -195,6 +196,8 @@ interface State {
   setInstanceParams(instanceId: string, patch: Readonly<Record<string, ParamValue | undefined>>): void
   /** 補上缺少的訊號名稱（氣缸代號、線圈輸出），不列入復原歷史 */
   ensureSignals(): void
+  /** 選型計算的設定（每分鐘循環數、計算壓力）；值為 undefined 時移除，不列入復原歷史 */
+  setSizing(patch: Partial<SizingSettings>): void
   /** 程序控制：步驟（執行中不能修改；不列入復原歷史） */
   setSequence(sequence: Sequence): void
   /** 自動執行（還沒開始模擬時先開始） */
@@ -359,10 +362,8 @@ export const useModuleStore = create<State>()((set, get) => {
   /** 兩個埠之間的 PU 管建議長度（依目前位置） */
   const estimateLengthBetween = (a: PortRef, b: PortRef): number | undefined => {
     const { doc, products } = get()
-    const frames = tubeFrames(doc, products, { a, b })
     const od = ops.getPort(doc, products, a)?.spec
-    if (!frames || od?.kind !== 'tube') return undefined
-    return estimateTubeLength(bezierLength(tubeControlPoints(frames[0], frames[1])), od.od)
+    return od?.kind === 'tube' ? ops.estimateTubeLengthOf(doc, products, { a, b, od: od.od }) : undefined
   }
 
   /** 直接寫入資料庫之後（匯入檔案、安裝範例），重新讀取共用產品庫並通知其他分頁 */
@@ -462,8 +463,12 @@ export const useModuleStore = create<State>()((set, get) => {
   }
 
   const openDoc = async (raw: ModuleDoc) => {
-    // 舊版或外部匯入的程序資料先整理過
-    const doc = raw.sequence ? { ...raw, sequence: sanitizeSequence(raw.sequence) } : raw
+    // 舊版或外部匯入的程序、選型資料先整理過
+    const doc: ModuleDoc = {
+      ...raw,
+      ...(raw.sequence && { sequence: sanitizeSequence(raw.sequence) }),
+      ...(raw.sizing && { sizing: sanitizeSizing(raw.sizing) }),
+    }
     set({
       doc,
       past: [],
@@ -1111,6 +1116,16 @@ export const useModuleStore = create<State>()((set, get) => {
     },
 
     ensureSignals,
+
+    setSizing(patch) {
+      const { doc } = get()
+      const sizing = sanitizeSizing({ ...doc.sizing, ...patch })
+      const next: ModuleDoc = { ...doc, updatedAt: Date.now() }
+      if (sizing) next.sizing = sizing
+      else delete next.sizing
+      set({ doc: next, saved: false })
+      scheduleSave()
+    },
 
     setSequence(sequence) {
       if (get().seq.mode !== 'off') return
