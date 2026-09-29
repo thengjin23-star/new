@@ -49,12 +49,52 @@ export const CYLINDER_PARAMS: readonly ParamDef[] = [
   },
 ]
 
+/** 選型用的負載方向 */
+export type LoadDirection = 'extend' | 'retract' | 'both'
+
+/**
+ * 選型用：負載與負載率（負載 ÷ 理論出力的上限）。屬於應用而不是產品，只在迴路圖或模組中設定；
+ * 屬性面板在「選型」區塊顯示（group: 'sizing'）。
+ */
+export const LOAD_PARAMS: readonly ParamDef[] = [
+  { key: 'load', label: '負載', unit: 'N', kind: 'number', default: 0, min: 0, max: 100000, step: 10, hint: '0 = 不檢核缸徑', circuitOnly: true, group: 'sizing' },
+  {
+    key: 'loadFactor',
+    label: '負載率',
+    kind: 'number',
+    default: 0.5,
+    min: 0.05,
+    max: 1,
+    step: 0.05,
+    hint: '靜態夾持約 0.7、一般移動約 0.5、高速或垂直上舉約 0.3',
+    circuitOnly: true,
+    group: 'sizing',
+  },
+]
+
+export const LOAD_DIRECTION_PARAM: ParamDef = {
+  key: 'loadDir',
+  label: '負載方向',
+  kind: 'select',
+  default: 'extend',
+  options: [
+    { value: 'extend', label: '伸出（推）' },
+    { value: 'retract', label: '縮回（拉）' },
+    { value: 'both', label: '兩方向' },
+  ],
+  circuitOnly: true,
+  group: 'sizing',
+}
+
 /** 位置感測器：氣缸代號 A → 縮回端 a0、伸出端 a1 */
 export function cylinderSignals(piston: number, params: Params | undefined): Signals {
   const letter = strParam(params, 'sensor')
   if (!letter) return {}
   return { [sensorName(letter, 0)]: piston <= END_TOLERANCE, [sensorName(letter, 1)]: piston >= 1 - END_TOLERANCE }
 }
+
+/** 標準缸徑（mm）：解析型號與建議缸徑用 */
+export const STANDARD_BORES: readonly number[] = [2.5, 4, 6, 8, 10, 12, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 140, 160, 180, 200, 250, 300]
 
 /** 依缸徑推算常用的活塞桿徑（ISO 15552／常見小型氣缸） */
 const ROD_BY_BORE: readonly (readonly [number, number])[] = [
@@ -110,7 +150,7 @@ export const cylinderDouble = defineComponent<CylinderState>({
     { id: 'A', role: 'working' },
     { id: 'B', role: 'working' },
   ],
-  params: [...CYLINDER_PARAMS, SENSOR_PARAM],
+  params: [...CYLINDER_PARAMS, SENSOR_PARAM, ...LOAD_PARAMS, LOAD_DIRECTION_PARAM],
   createState: () => ({ piston: 0 }),
   getInternalPaths: () => [],
   getSignals: (state, params) => cylinderSignals(state.piston, params),

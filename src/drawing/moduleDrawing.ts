@@ -34,6 +34,7 @@ export function drawingOptions(info: DrawingInfo | undefined, settings: Pick<App
     balloons: true,
     portTags: true,
     iso: true,
+    sizingSheet: false,
     ...info,
   }
 }

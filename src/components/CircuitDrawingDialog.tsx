@@ -8,6 +8,7 @@ import { useObjectUrl } from '../hooks/useObjectUrl'
 import { useCircuitStore } from '../store/circuitStore'
 import { lastCycle } from '../store/trace'
 import { today } from '../utils/date'
+import { useCircuitSizing } from './sizing/useCircuitSizing'
 import { Button, Dialog } from './ui'
 
 const selectClass = 'mt-0.5 h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-sm text-slate-800'
@@ -32,6 +33,10 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
   const diagramMode = trace && lastCycle(trace, lastT) ? 'step' : 'time'
   const hasDiagram = !!trace && trace.rows.length > 0 && trace.samples.length > 1
   const [withDiagram, setWithDiagram] = useState(hasDiagram && diagramMode === 'step')
+  // 選型計算書：迴路中有氣缸時可以附上（接在最後）
+  const summary = useCircuitSizing()
+  const hasSizing = summary.rows.length > 0
+  const [withSizing, setWithSizing] = useState(false)
   const [sheets, setSheets] = useState<Sheet[] | undefined>()
   const sheet = sheets?.[0]
   const [error, setError] = useState<string | undefined>()
@@ -54,10 +59,14 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
       import('../drawing/circuitSheet'),
       import('../drawing/diagramSheet'),
       import('../store/traceDiagram'),
+      import('../drawing/sizingSheet'),
     ])
-      .then(([{ circuitSheetInput }, { layoutCircuitSheet }, { layoutDiagramSheet }, { diagramGeometry }]) => {
+      .then(([{ circuitSheetInput }, { layoutCircuitSheet }, { layoutDiagramSheet }, { diagramGeometry }, { layoutSizingSheets, sizingSheetCount }]) => {
         if (!alive) return
         const two = withDiagram && hasDiagram
+        const sizingPages = withSizing && hasSizing ? sizingSheetCount(summary, paper) : 0
+        const total = 1 + (two ? 1 : 0) + sizingPages
+        const label = (n: number) => (total > 1 ? `${n}/${total}` : undefined)
         const title = {
           company: settings.company,
           title: info.name,
@@ -69,7 +78,7 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
         }
         const input = circuitSheetInput(nodes, edges, {
           paper,
-          title: { ...title, ...(two && { sheet: '1/2' }) },
+          title: { ...title, ...(total > 1 && { sheet: label(1) }) },
           portLabels: view.portLabels,
           showTags,
           remarks: info.notes,
@@ -81,12 +90,13 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
           result.push(
             layoutDiagramSheet({
               paper,
-              title: { ...title, sheet: '2/2' },
+              title: { ...title, sheet: label(2) },
               geometry,
               steps: diagramMode === 'step' ? sequence.steps : undefined,
             }),
           )
         }
+        if (sizingPages) result.push(...layoutSizingSheets({ paper, title, summary, sheetLabel: (page) => label(result.length + page + 1) }))
         setSheets(result)
         setError(undefined)
       })
@@ -94,12 +104,7 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
     return () => {
       alive = false
     }
-  }, [nodes, edges, info, paper, view.portLabels, showTags, settings, products, withDiagram, hasDiagram, trace, diagramMode, lastT, sequence])
-
-  const svg = useMemo(() => (sheet ? sheetToSvg(sheet) : undefined), [sheet])
-  const previewUrl = useObjectUrl(svg, 'image/svg+xml')
-  const svg2 = useMemo(() => (sheets?.[1] ? sheetToSvg(sheets[1]) : undefined), [sheets])
-  const previewUrl2 = useObjectUrl(svg2, 'image/svg+xml')
+  }, [nodes, edges, info, paper, view.portLabels, showTags, settings, products, withDiagram, hasDiagram, trace, diagramMode, lastT, sequence, withSizing, hasSizing, summary])
 
   const fileBase = `${info.name}${info.drawingNo ? `-${info.drawingNo}` : ''}${info.revision ? `-${info.revision}` : ''}`
   const run = async (label: string, task: () => Promise<void> | void) => {
@@ -123,7 +128,7 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <span className="mr-auto self-center text-xs text-slate-500" role="status">
-            {busy ?? (sheet ? `${paper} 橫式．${nodes.length} 個元件${sheets && sheets.length > 1 ? '．共 2 張' : ''}` : '產生中…')}
+            {busy ?? (sheet ? `${paper} 橫式．${nodes.length} 個元件${sheets && sheets.length > 1 ? `．共 ${sheets.length} 張` : ''}` : '產生中…')}
           </span>
           <Button onClick={onClose}>關閉</Button>
           <Button disabled={!sheet || !!busy} onClick={() => void run('輸出 SVG…', () => downloadSvg(sheets!, fileBase))}>
@@ -162,6 +167,13 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
             <input type="checkbox" checked={withDiagram && hasDiagram} disabled={!hasDiagram} onChange={(e) => setWithDiagram(e.target.checked)} />
             附{diagramMode === 'step' ? '位移－步驟圖' : '位移－時間圖'}（第 2 張）
           </label>
+          <label
+            className={`col-span-2 flex items-center gap-2 text-sm lg:col-span-1 ${hasSizing ? 'text-slate-700' : 'text-slate-400'}`}
+            title={hasSizing ? '缸徑檢核、耗氣量、建議的閥與管徑（接在最後）' : '迴路中沒有氣缸'}
+          >
+            <input type="checkbox" checked={withSizing && hasSizing} disabled={!hasSizing} onChange={(e) => setWithSizing(e.target.checked)} />
+            附選型計算書
+          </label>
           <label className="block text-xs text-slate-500">
             圖號
             <input value={text.drawingNo} onChange={(e) => setText({ ...text, drawingNo: e.target.value })} className={inputClass} />
@@ -177,15 +189,21 @@ export function CircuitDrawingDialog({ onClose }: { onClose: () => void }) {
         <section className="flex min-h-[50vh] min-w-0 flex-1 flex-col gap-2 lg:min-h-0">
           {error && <p className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">{error}</p>}
           <div className="min-h-0 flex-1 overflow-auto rounded-md border border-slate-200 bg-slate-100 p-2" data-testid="drawing-preview">
-            {previewUrl ? (
-              <img src={previewUrl} alt="迴路圖預覽" className="mx-auto max-h-full max-w-full bg-white shadow" />
+            {sheets?.length ? (
+              sheets.map((s, i) => <SheetPreview key={i} sheet={s} alt={`第 ${i + 1} 張預覽`} first={i === 0} />)
             ) : (
               <p className="p-6 text-center text-sm text-slate-500">產生中…</p>
             )}
-            {previewUrl2 && <img src={previewUrl2} alt="位移－步驟圖預覽" className="mx-auto mt-3 max-h-full max-w-full bg-white shadow" />}
           </div>
         </section>
       </div>
     </Dialog>
   )
+}
+
+/** 一張圖紙的預覽（SVG） */
+function SheetPreview({ sheet, alt, first }: { sheet: Sheet; alt: string; first: boolean }) {
+  const svg = useMemo(() => sheetToSvg(sheet), [sheet])
+  const url = useObjectUrl(svg, 'image/svg+xml')
+  return url ? <img src={url} alt={alt} className={`mx-auto max-h-full max-w-full bg-white shadow ${first ? '' : 'mt-3'}`} /> : null
 }

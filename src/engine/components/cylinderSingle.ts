@@ -2,7 +2,7 @@ import { CYLINDER_STROKE_SECONDS } from '../constants'
 import { defineComponent } from '../definition'
 import { numParam } from '../params'
 import { SENSOR_PARAM } from '../signals'
-import { clampPiston, CYLINDER_PARAMS, cylinderSignals, type CylinderState } from './cylinderDouble'
+import { clampPiston, CYLINDER_PARAMS, cylinderSignals, LOAD_PARAMS, type CylinderState } from './cylinderDouble'
 
 /**
  * 單動氣缸（彈簧復歸）：A 有壓 → 伸出；A 排氣 → 彈簧推回；A 被封住 → 停在原處。
@@ -27,6 +27,7 @@ export const cylinderSingle = defineComponent<CylinderState>({
       hint: '排氣不節流時彈簧推回全行程的秒數',
     },
     SENSOR_PARAM,
+    ...LOAD_PARAMS,
   ],
   createState: () => ({ piston: 0 }),
   getInternalPaths: () => [],

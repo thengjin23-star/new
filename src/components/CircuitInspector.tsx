@@ -23,6 +23,10 @@ import { useCircuitStore } from '../store/circuitStore'
 import { useCircuitUi } from '../store/circuitUi'
 import { isPneumaticNode, type NoteFlowNode, type PneumaticFlowNode } from '../store/flow'
 import { ParamInput, PneumaticFunctionDialog } from './PneumaticFunctionEditor'
+import { AirSummary } from './sizing/AirSummary'
+import { CylinderSizing } from './sizing/CylinderSizing'
+import { useCircuitCycleTime, useCircuitSizing } from './sizing/useCircuitSizing'
+import { sanitizeSizing } from '../sizing/sizing'
 import { SymbolPreview } from './SymbolPreview'
 import { Button } from './ui'
 
@@ -93,8 +97,10 @@ function NodeInspector({ node }: { node: PneumaticFlowNode }) {
 
   const setParam = (key: string, raw: string | boolean) => {
     const next: Record<string, ParamValue> = { ...params }
-    if (raw === '') delete next[key]
-    else if (typeof raw === 'boolean') next[key] = raw
+    // 選項參數（線圈訊號、氣缸代號、負載方向…）存字串，其他存數值
+    const select = def.params?.find((p) => p.key === key)?.kind === 'select'
+    if (typeof raw === 'boolean' || select) next[key] = raw
+    else if (raw === '') delete next[key]
     else {
       const n = Number(raw)
       if (!Number.isFinite(n)) return
@@ -181,15 +187,26 @@ function NodeInspector({ node }: { node: PneumaticFlowNode }) {
         )}
       </section>
 
-      {def.params && def.params.length > 0 && (
+      {def.params && def.params.some((p) => p.group !== 'sizing') && (
         <section>
           <h3 className={sectionTitle}>參數</h3>
           <div className="grid grid-cols-2 gap-2">
-            {def.params.map((p) => (
-              <ParamInput key={p.key} def={p} value={params?.[p.key]} onChange={(raw) => setParam(p.key, raw)} />
-            ))}
+            {def.params
+              .filter((p) => p.group !== 'sizing')
+              .map((p) => (
+                <ParamInput key={p.key} def={p} value={params?.[p.key]} onChange={(raw) => setParam(p.key, raw)} />
+              ))}
           </div>
-          {def.category === 'actuator' && <CylinderInfo params={params} type={componentType} />}
+        </section>
+      )}
+
+      {def.category === 'actuator' && (
+        <section>
+          <h3 className={sectionTitle}>選型</h3>
+          <CircuitCylinderSizing
+            node={node}
+            onParam={(key, value) => setParam(key, value === undefined ? '' : typeof value === 'boolean' ? value : String(value))}
+          />
         </section>
       )}
 
@@ -238,19 +255,22 @@ function NodeInspector({ node }: { node: PneumaticFlowNode }) {
   )
 }
 
-/** 缸徑推算的理論推力（以 0.5 MPa 為例） */
-function CylinderInfo({ params, type }: { params: PneumaticFlowNode['data']['params']; type: string }) {
-  const p = resolveParams(registry.get(type), params)
-  const bore = numParam(p, 'bore', 32)
-  const rod = numParam(p, 'rod', 0) || defaultRodDiameter(bore)
-  const push = cylinderForce(0.5, bore, rod, 'extend')
-  const pull = cylinderForce(0.5, bore, rod, 'retract')
+/** 氣缸的選型：負載、負載率 → 缸徑檢核與建議、耗氣量、閥與管徑 */
+function CircuitCylinderSizing({ node, onParam }: { node: PneumaticFlowNode; onParam: (key: string, value: ParamValue | undefined) => void }) {
+  const summary = useCircuitSizing()
+  const pressureSet = useCircuitStore((s) => s.info.sizing?.pressure !== undefined)
+  const row = summary.rows.find((r) => r.id === node.id)
+  if (!row) return null
+  const model = node.data.product?.modelCode
   return (
-    <p className="mt-2 rounded-md bg-slate-50 p-2 text-[11px] leading-4 text-slate-600">
-      理論推力（0.5 MPa）：伸出 {push.toFixed(0)} N、縮回 {pull.toFixed(0)} N
-      <br />
-      （缸徑 Ø{bore}、桿徑 Ø{rod}；實際可用約為理論值的 50–70%）
-    </p>
+    <CylinderSizing
+      row={row}
+      params={node.data.params}
+      onParam={onParam}
+      onApplyBore={(bore) => onParam('bore', bore)}
+      pressureNote={pressureSet ? '選型設定' : '依迴路'}
+      applyNote={model ? `目前指定的型號是 ${model}，套用後請改選對應缸徑的型號。` : undefined}
+    />
   )
 }
 
@@ -303,7 +323,7 @@ function CircuitInfoPanel() {
   const openDialog = useCircuitUi((s) => s.openDialog)
   const { fitView } = useReactFlow()
   const sequence = useCircuitStore((s) => s.sequence)
-  const checks = useMemo(() => checkCircuit(nodes, edges, products, sequence), [nodes, edges, products, sequence])
+  const checks = useMemo(() => checkCircuit(nodes, edges, products, sequence, info.sizing), [nodes, edges, products, sequence, info.sizing])
   const bom = useMemo(() => buildCircuitBom(nodes, products), [nodes, products])
   const total = bomTotal(bom)
 
@@ -383,6 +403,8 @@ function CircuitInfoPanel() {
         )}
       </section>
 
+      <AirSection focus={focus} />
+
       <section>
         <header className="mb-1.5 flex items-center justify-between">
           <h3 className={sectionTitle.replace('mb-1.5 ', '')}>BOM（{bom.reduce((n, r) => n + r.quantity, 0)} 件）</h3>
@@ -445,6 +467,28 @@ function CircuitInfoPanel() {
         </label>
       </section>
     </div>
+  )
+}
+
+/** 耗氣量：每循環、每分鐘、峰值流量（依程序與選型設定） */
+function AirSection({ focus }: { focus: (ids: string[]) => void }) {
+  const summary = useCircuitSizing()
+  const cycleTime = useCircuitCycleTime()
+  const settings = useCircuitStore((s) => s.info.sizing)
+  const setInfo = useCircuitStore((s) => s.setInfo)
+  if (!summary.rows.length) return null
+  return (
+    <section>
+      <h3 className={sectionTitle}>耗氣量</h3>
+      <AirSummary
+        summary={summary}
+        settings={settings ?? {}}
+        onChange={(patch) => setInfo({ sizing: sanitizeSizing({ ...settings, ...patch }) })}
+        cycleTime={cycleTime}
+        tubeLengthEditable
+        onSelect={(id) => focus([id])}
+      />
+    </section>
   )
 }
 

@@ -28,6 +28,8 @@ export interface ParamDef {
   hint?: string
   /** 只在迴路圖設定（訊號名稱等），產品的氣動功能不列出 */
   circuitOnly?: boolean
+  /** 屬性面板的分組：'sizing' = 選型（負載、負載率），不列在一般參數表 */
+  group?: 'sizing'
 }
 
 /**

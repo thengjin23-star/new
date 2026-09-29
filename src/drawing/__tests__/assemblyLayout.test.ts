@@ -184,3 +184,12 @@ describe('版面工具', () => {
     expect(choosePortView({ ...port, views: { ...port.views, front: { ...port.views.front, visible: false } } })?.[0]).toBe('top')
   })
 })
+
+describe('layoutAssemblyDrawing：後面接其他圖紙', () => {
+  it('張數標示算進後面的圖紙（例如選型計算書）', () => {
+    const drawing = layoutAssemblyDrawing({ ...assemblyInput(), extraSheets: 1 })
+    expect(drawing.sheets).toHaveLength(1)
+    const texts = drawing.sheets[0].primitives.flatMap((p) => (p.kind === 'text' ? [p.text] : []))
+    expect(texts).toContain('1/2')
+  })
+})

@@ -33,7 +33,11 @@ export {
   cylinderForce,
   cylinderSignals,
   defaultRodDiameter,
+  LOAD_DIRECTION_PARAM,
+  LOAD_PARAMS,
+  STANDARD_BORES,
   type CylinderState,
+  type LoadDirection,
 } from './cylinderDouble'
 export { cylinderSingle } from './cylinderSingle'
 export { exhaust, plug, silencer } from './exhaust'

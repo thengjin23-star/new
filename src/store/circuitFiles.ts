@@ -41,7 +41,7 @@ export async function saveCircuit(options?: { asNew?: { name: string; customer?:
   const { info } = useCircuitStore.getState()
   const now = Date.now()
   const next: CircuitInfo = options?.asNew
-    ? { ...createCircuitInfo(options.asNew.name), customer: options.asNew.customer, notes: info.notes }
+    ? { ...createCircuitInfo(options.asNew.name), customer: options.asNew.customer, notes: info.notes, ...(info.sizing && { sizing: info.sizing }) }
     : { ...info, updatedAt: now }
   await catalog.putCircuit(currentDoc(next))
   useCircuitStore.getState().markStored(next)

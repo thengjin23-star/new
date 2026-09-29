@@ -1,4 +1,4 @@
-import { registry, type ComponentDefinition, type ParamValue } from '../engine'
+import { registry, STANDARD_BORES, type ComponentDefinition, type ParamValue } from '../engine'
 import type { Product, ProductPneumatic, ProductPort } from './types'
 
 /** 接頭、轉接頭、接管座：氣流直接通過，不畫在迴路圖 */
@@ -99,8 +99,6 @@ function flowControlPorts(ports: readonly ProductPort[]): Record<string, string>
 export function autoPortMap(type: string, ports: readonly ProductPort[]): Record<string, string> {
   return type === 'flowControl' ? flowControlPorts(ports) : matchPortsByName(type, ports)
 }
-
-const STANDARD_BORES = [2.5, 4, 6, 8, 10, 12, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 140, 160, 180, 200, 250, 300]
 
 /**
  * 從名稱或型號解析缸徑與行程，例如：

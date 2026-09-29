@@ -1,4 +1,5 @@
 import { registry, type Sequence, type SequenceStep } from '../engine'
+import { sanitizeSizing, type SizingSettings } from '../sizing/sizing'
 import { newId } from '../utils/id'
 import { isPneumaticNode, type CircuitFlowNode, type TubeFlowEdge } from './flow'
 
@@ -15,6 +16,8 @@ export interface CircuitInfo {
   drawingNo?: string
   revision?: string
   paper?: 'A3' | 'A4'
+  /** 選型計算的設定（每分鐘循環數、計算壓力、配管長度） */
+  sizing?: SizingSettings
   createdAt: number
   updatedAt: number
 }
@@ -139,6 +142,7 @@ export function parsePcir(text: string): CircuitDoc {
     drawingNo: typeof c.drawingNo === 'string' ? c.drawingNo : undefined,
     revision: typeof c.revision === 'string' ? c.revision : undefined,
     paper: c.paper === 'A3' || c.paper === 'A4' ? c.paper : undefined,
+    sizing: sanitizeSizing(c.sizing),
     nodes: nodes.map(stripNode),
     edges: edges.map(stripEdge),
     sequence: sanitizeSequence(c.sequence),

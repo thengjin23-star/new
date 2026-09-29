@@ -142,7 +142,7 @@ export interface CircuitStore {
   redo(): void
   /** 以新的電路取代目前的電路（開新電路、開啟檔案、載入範例）；清除復原記錄 */
   replaceCircuit(nodes: CircuitFlowNode[], edges: TubeFlowEdge[], info?: CircuitInfo, stored?: boolean, sequence?: Sequence): void
-  setInfo(patch: Partial<Pick<CircuitInfo, 'name' | 'customer' | 'notes' | 'drawingNo' | 'revision' | 'paper'>>): void
+  setInfo(patch: Partial<Pick<CircuitInfo, 'name' | 'customer' | 'notes' | 'drawingNo' | 'revision' | 'paper' | 'sizing'>>): void
   /** 已存進電路清單 */
   markStored(info: CircuitInfo): void
   setView(patch: Partial<ViewSettings>): void

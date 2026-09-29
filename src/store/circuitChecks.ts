@@ -1,6 +1,8 @@
 import { findUnconnectedPorts, registry, resolveParams, strParam, type Sequence } from '../engine'
 import { effectivePneumatic, pneumaticTypeLabel } from '../catalog/pneumatic'
 import type { Product } from '../catalog/types'
+import { circuitSizingInputs } from '../sizing/circuitSizing'
+import { sizeBore, type SizingSettings } from '../sizing/sizing'
 import { circuitSignalNames } from './circuitSignals'
 import { isPneumaticNode, toCircuit, type CircuitFlowNode, type PneumaticFlowNode, type TubeFlowEdge } from './flow'
 
@@ -35,6 +37,7 @@ export function checkCircuit(
   edges: readonly TubeFlowEdge[],
   products: Readonly<Record<string, Product>>,
   sequence?: Sequence,
+  sizing?: SizingSettings,
 ): CircuitCheck[] {
   const result: CircuitCheck[] = []
   const pneumatic = nodes.filter(isPneumaticNode)
@@ -149,6 +152,19 @@ export function checkCircuit(
   const noProduct = pneumatic.filter((n) => !n.data.product && !['airSupply', 'exhaust'].includes(n.data.componentType))
   if (noProduct.length) {
     result.push({ level: 'info', text: `${noProduct.length} 個元件尚未指定型號（BOM 以元件類型列出）`, nodeIds: noProduct.map((n) => n.id) })
+  }
+
+  // 缸徑不足：負載 ÷ 理論出力超過負載率（有輸入負載的氣缸）
+  for (const input of circuitSizingInputs(nodes, edges, sizing)) {
+    const r = sizeBore(input.cylinder, input.load, input.pressure)
+    if (!r || r.ok) continue
+    const node = byId.get(input.id)!
+    const advice = r.recommended !== undefined ? `，建議 Ø${r.recommended}` : '，標準缸徑都不夠'
+    result.push({
+      level: 'warn',
+      text: `${nodeTitle(node)}缸徑不足：負載率 ${r.ratio.toFixed(2)} 超過 ${input.load.loadFactor}${advice}`,
+      nodeIds: [input.id],
+    })
   }
 
   const order: Record<CheckLevel, number> = { error: 0, warn: 1, info: 2 }
